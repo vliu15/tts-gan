@@ -59,7 +59,7 @@ class Trainer(nn.Module):
         l_fake = sum((pred ** 2).mean(0).sum() for pred in y_pred_d + z_pred_d)
 
         if debug:
-            print_list_values(l_real, l_fake)
+            print_list_values(l_real, l_fake, prefix="d\t")
 
         return {"real": l_real, "fake": l_fake}
 
@@ -72,7 +72,7 @@ class Trainer(nn.Module):
         l_mse = 0.5 * ((y_len.float() - y_pred_len.float()) ** 2).mean()
 
         if debug:
-            print_list_values(l_nll, l_adv, l_hard, l_soft, l_mse)
+            print_list_values(l_nll, l_adv, l_hard, l_soft, l_mse, prefix="g\t")
 
         return {"nll": l_nll, "adv": l_adv, "hard": l_hard, "soft": l_soft, "mse": l_mse}
 
@@ -127,13 +127,13 @@ class Trainer(nn.Module):
             print_batch_stats(y_pred, prefix="y^\t")
             print_batch_stats(x_latents, prefix="xl\t")
 
-        y_d = self.audio_discriminator(y)
-        y_pred_d = self.audio_discriminator(y_pred)
-        z_d = self.spect_discriminator(z)
-        z_pred_d = self.spect_discriminator(z_pred)
+        y_d = self.audio_discriminator(y.detach())
+        y_pred_d = self.audio_discriminator(y_pred.detach())
+        z_d = self.spect_discriminator(z.detach())
+        z_pred_d = self.spect_discriminator(z_pred.detach())
 
         y_pred_g = self.audio_discriminator(y_pred)
-        z_pred_g = self.audio_discriminator(z_pred)
+        z_pred_g = self.spect_discriminator(z_pred)
 
         d_loss_dict = self.d_loss(y_d, y_pred_d, z_d, z_pred_d, debug=debug)
         g_loss_dict = self.g_loss(x_latents, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug=debug)

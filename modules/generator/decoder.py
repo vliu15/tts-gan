@@ -90,8 +90,6 @@ class Decoder(nn.Module):
             y, mask = self.blocks[3 * i + 2](y, mask=mask)
 
         # Project to audio waveform.
-        # y = self.norm_out(y, mask=mask)
-        # y = self.activation(y)
         y = self.proj_out(y * mask)
         y = torch.tanh(y * mask)
 

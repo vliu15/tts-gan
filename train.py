@@ -100,10 +100,6 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
         for batch_idx, batch in pbar:
             batch = [example.to(device) for example in batch]
 
-            # Forward pass.
-            # d_loss_dict, g_loss_dict, _, _, _ = trainer.step(*batch, jitter_steps=60, debug=(batch_idx % 50 == 0))
-            # trainer.apply_orthogonal_regularization(weight=loss_weights["reg"])
-
             # Discriminator.
             d_optimizer.zero_grad()
             d_loss_dict = trainer.d_step(*batch, jitter_steps=60, debug=(batch_idx % 50 == 0))
@@ -133,7 +129,6 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
 
         # Post epoch management.
         pbar.close()
-        torch.cuda.empty_cache()
         d_scheduler.step()
         g_scheduler.step()
         if (i + 1) % 5 == 0:

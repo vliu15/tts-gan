@@ -75,8 +75,6 @@ class DurationPredictor(nn.Module):
         x = self.activation(x)
         x = self.conv3(x * mask)
 
-        # x = self.norm_out(x, mask=mask)
-        # x = self.activation(x)
         x = self.proj_out(x * mask)
         x = x.exp() * mask
 

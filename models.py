@@ -60,7 +60,7 @@ class AudioGenerator(nn.Module):
 
         # Patch in y_len for inference.
         if y_len is None:
-            y_len = y_pred_len
+            y_len = torch.ceil(y_pred_len)
 
         y_latents = self.aligner(x_latents, x_lengths, x_mask, y_len, y_offset=y_offset)
         y, y_mask = self.decoder(y_latents, y_len)
