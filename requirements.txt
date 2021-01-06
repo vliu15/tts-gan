@@ -1,0 +1,13 @@
+hydra-core
+inflect
+librosa
+matplotlib
+numpy
+omegaconf
+performer-pytorch
+pytorch-lightning==1.1.2
+pyyaml
+scipy
+tabulate
+torch>=1.6.0
+unidecode

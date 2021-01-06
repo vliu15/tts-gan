@@ -1,0 +1,2 @@
+from modules.discriminator.multiscale import MultiScaleDiscriminator
+from modules.discriminator.randomwindow import RandomWindowDiscriminator
