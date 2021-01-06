@@ -78,7 +78,7 @@ def parse_arguments():
 
 def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, log_dir, device, autocast: bool = False, max_grad_norm: float = 1.0):
     """ Trains model fully. """
-    # Unpack and load everything on device.
+    # Unpack.
     start_epoch, end_epoch = epochs
     train_dataloader, val_dataloader = dataloaders
     d_optimizer, g_optimizer = optimizers
@@ -87,6 +87,8 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
     global_step = 0
     writer = SummaryWriter(log_dir)
     version = os.path.basename(log_dir)
+    if autocast:
+        scaler = torch.cuda.amp.GradScaler()
 
     for i in range(start_epoch, end_epoch):
 
@@ -102,24 +104,42 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
 
             # Discriminator.
             d_optimizer.zero_grad()
-            d_loss_dict = trainer.d_step(*batch, jitter_steps=60, debug=(batch_idx % 50 == 0))
-            d_loss = d_loss_dict["real"] + d_loss_dict["fake"]
-            d_loss.backward()
+            with torch.cuda.amp.autocast(enabled=autocast):
+                d_loss_dict = trainer.d_step(*batch, jitter_steps=60, debug=(batch_idx % 50 == 0))
+                d_loss = d_loss_dict["real"] + d_loss_dict["fake"]
+            if autocast:
+                scaler.scale(d_loss).backward()
+                scaler.unscale_(d_optimizer)
+            else:
+                d_loss.backward()
             trainer.apply_orthogonal_regularization(trainer.discriminator_parameters, weight=loss_weights["reg"])
             torch.nn.utils.clip_grad_norm_(trainer.discriminator_parameters, max_grad_norm)
-            d_optimizer.step()
+            if autocast:
+                scaler.step(d_optimizer)
+                scaler.update()
+            else:
+                d_optimizer.step()
 
             # Generator.
             g_optimizer.zero_grad()
-            g_loss_dict = trainer.g_step(*batch, jitter_steps=60, debug=(batch_idx % 50 == 0))
-            g_loss = 0.0
-            for name, loss in g_loss_dict.items():
-                weight = loss_weights.get(name, 1.0)
-                g_loss = g_loss + weight * loss
-            g_loss.backward()
+            with torch.cuda.amp.autocast(enabled=autocast):
+                g_loss_dict = trainer.g_step(*batch, jitter_steps=60, debug=(batch_idx % 50 == 0))
+                g_loss = 0.0
+                for name, loss in g_loss_dict.items():
+                    weight = loss_weights.get(name, 1.0)
+                    g_loss = g_loss + weight * loss
+            if autocast:
+                scaler.scale(g_loss).backward()
+                scaler.unscale_(g_optimizer)
+            else:
+                g_loss.backward()
             trainer.apply_orthogonal_regularization(trainer.generator_parameters, weight=loss_weights["reg"])
             torch.nn.utils.clip_grad_norm_(trainer.generator_parameters, max_grad_norm)
-            g_optimizer.step()
+            if autocast:
+                scaler.step(g_optimizer)
+                scaler.update()
+            else:
+                g_optimizer.step()
 
             # Log training losses.
             pbar.update(1)
@@ -180,6 +200,7 @@ def main():
     seed_everything(1234)
     torch.autograd.set_detect_anomaly(True)
     torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.benchmark = True
 
     args = parse_arguments()
     with open(args.config, "r") as f:
@@ -269,6 +290,7 @@ def main():
         log_dir,
         device,
         autocast=args.autocast,
+        max_grad_norm=args.max_grad_norm,
     )
 
 

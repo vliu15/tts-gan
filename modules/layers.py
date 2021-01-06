@@ -40,6 +40,9 @@ class SpectralNormConv1d(nn.Module):
 
 
 class BatchNorm1d(nn.BatchNorm1d):
+    def __init__(self, num_features: int, eps: float = 1e-4, momentum: float = 0.1, affine: bool = True, track_running_stats: bool = True):
+        super().__init__(num_features, eps=eps, momentum=momentum, affine=affine, track_running_stats=track_running_stats)
+
     def forward(self, x, mask=None):
         return super().forward(x)
 
@@ -221,7 +224,7 @@ class ResBlock1d(nn.Module):
         dilation: int = 2,
         scale_factor: int = 2,
         activation: callable = F.relu,
-        normalization: nn.Module = nn.BatchNorm1d,
+        normalization: nn.Module = BatchNorm1d,
         spectral_norm: bool = False,
     ):
         super().__init__()

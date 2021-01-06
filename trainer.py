@@ -30,7 +30,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from modules.utils import mu_inverse, mu_transform, print_batch_stats, print_list_values
+from modules.utils import mu_inverse, mu_transform, print_batch_stats, print_cuda_memory, print_list_values
 
 
 class Trainer(nn.Module):
@@ -85,6 +85,7 @@ class Trainer(nn.Module):
             y = mu_transform(y)
 
         if debug:
+            print_cuda_memory()
             print_batch_stats(y, prefix="y*\t")
             print_batch_stats(y_pred, prefix="y^\t")
             print_batch_stats(x_latents, prefix="xl\t")
@@ -166,6 +167,8 @@ class Trainer(nn.Module):
             if not isinstance(v, nn.Module):
                 continue
             table += [[i, k, v.__class__.__name__, get_readable_number(get_parameter_count(v))]]
+            i += 1
+
         print(tabulate(table, headers=headers))
 
     @staticmethod
