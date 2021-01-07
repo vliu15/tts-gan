@@ -30,11 +30,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from modules.utils import mu_inverse, mu_transform, print_batch_stats, print_cuda_memory, print_list_values
+from modules.utils import get_postprocessing_fn, print_batch_stats, print_cuda_memory, print_list_values
 
 
 class Trainer(nn.Module):
-    """ Trainer for generative adversarial text-to-speech model. """
+    """ Trainer for generative adversarial text-to-speech model.
+    
+    Args:
+        sampling_rate: sampling rate of the audio trained to generate
+        audio_generator: structured config for audio generator
+        audio_discriminator: structured config for audio discriminator
+        spect_discriminator: structured config for spectrogram discriminator
+        spect_fn: structured config for spectrogram function
+        sdtw_fn: structured config for soft dynamic time warping function
+        rescale_factor: factor by which audio is rescaled in preprocessing
+        mu_law: whether to learn mu-transformed audio directly
+    """
 
     def __init__(
         self,
@@ -44,6 +55,7 @@ class Trainer(nn.Module):
         spect_discriminator: DictConfig,
         spect_fn: DictConfig,
         sdtw_fn: DictConfig,
+        mu_law: bool = True,
     ):
         super().__init__()
         self.sampling_rate = sampling_rate
@@ -52,6 +64,7 @@ class Trainer(nn.Module):
         self.spect_discriminator = instantiate(spect_discriminator)
         self.spect_fn = instantiate(spect_fn)
         self.sdtw_fn = instantiate(sdtw_fn)
+        self.post_fn = get_postprocessing_fn(mu_law=mu_law)
 
     def d_loss(self, y_d, y_pred_d, z_d, z_pred_d, debug: bool = False):
         """ Computes loss for discriminators. """
@@ -80,9 +93,8 @@ class Trainer(nn.Module):
         """ Computes one step through the discriminator. """
         with torch.no_grad():
             x_latents, y_pred, y_pred_len = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
-            z_pred = self.spect_fn(mu_inverse(y_pred), jitter_steps=0)
-            z = self.spect_fn(y, jitter_steps=jitter_steps)
-            y = mu_transform(y)
+            z_pred = self.spect_fn(self.post_fn(y_pred), jitter_steps=0)
+            z = self.spect_fn(self.post_fn(y), jitter_steps=jitter_steps)
 
         if debug:
             print_cuda_memory()
@@ -102,10 +114,10 @@ class Trainer(nn.Module):
     def g_step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 0, debug: bool = False):
         """ Computes one step through the generator. """
         x_latents, y_pred, y_pred_len = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
-        z_pred = self.spect_fn(mu_inverse(y_pred), jitter_steps=0)
+        z_pred = self.spect_fn(self.post_fn(y_pred), jitter_steps=0)
 
         with torch.no_grad():
-            z = self.spect_fn(mu_transform(y), jitter_steps=jitter_steps)
+            z = self.spect_fn(self.post_fn(y), jitter_steps=jitter_steps)
 
         y_pred_g = self.audio_discriminator(y_pred)
         z_pred_g = self.spect_discriminator(z_pred)
@@ -117,11 +129,10 @@ class Trainer(nn.Module):
     def step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 60, debug: bool = False):
         """ Completes one full step through the model. """
         x_latents, y_pred, y_pred_len = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
-        z_pred = self.spect_fn(mu_inverse(y_pred), jitter_steps=0)
+        z_pred = self.spect_fn(self.post_fn(y_pred), jitter_steps=0)
 
         with torch.no_grad():
-            z = self.spect_fn(y, jitter_steps=jitter_steps)
-            y = mu_transform(y)
+            z = self.spect_fn(self.post_fn(y), jitter_steps=jitter_steps)
 
         if debug:
             print_batch_stats(y, prefix="y*\t")
@@ -139,7 +150,15 @@ class Trainer(nn.Module):
         d_loss_dict = self.d_loss(y_d, y_pred_d, z_d, z_pred_d, debug=debug)
         g_loss_dict = self.g_loss(x_latents, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug=debug)
 
-        return d_loss_dict, g_loss_dict, y_pred, z_pred, z
+        with torch.no_grad():
+            y = self.post_fn(y)
+            y_pred = self.post_fn(y_pred)
+
+        return d_loss_dict, g_loss_dict, y, y_pred, z, z_pred
+
+    def infer(self, x, x_len=None):
+        """ Runs inference on input phoneme sequences. """
+
 
     def print_model_summary(self):
         """ Outputs summary of module parameters. """

@@ -46,13 +46,12 @@ def parse_arguments():
     parser.add_argument("--resume", type=str, default=None, help="Path to model checkpoint.")
 
     # Dataloader & dataset.
-    parser.add_argument("--metadata_file", type=str, default="/share/pi/hackhack/vincent/LJSpeech-1.1/metadata.csv", help="Path to metadata.csv.")
-    parser.add_argument("--cmudict_file", type=str, default="/share/pi/hackhack/vincent/LJSpeech-1.1/cmu_dictionary", help="Path to CMU phoneme dictionary.")
+    parser.add_argument("--metadata_file", type=str, default="/home/vincent/LJSpeech-1.1/metadata.csv", help="Path to metadata.csv.")
+    parser.add_argument("--cmudict_file", type=str, default="/home/vincent/cmu_dictionary", help="Path to CMU phoneme dictionary.")
 
     parser.add_argument("--train_files", type=str, default="train_files.txt", help="Path to list of train files.")
-    parser.add_argument("--train_batch_size", type=int, default=64, help="Batch size for training.")
+    parser.add_argument("--train_batch_size", type=int, default=128, help="Batch size for training.")
     parser.add_argument("--train_segment_length", type=int, default=18000, help="Audio segment length for training.")
-    parser.add_argument("--data_augment", default=False, action="store_true", help="Whether to apply data augmentation.")
 
     parser.add_argument("--val_files", type=str, default="test_files.txt", help="Path to list of validation files.")
     parser.add_argument("--val_batch_size", type=int, default=16, help="Batch size for validation.")
@@ -66,11 +65,11 @@ def parse_arguments():
     # Loss weights.
     parser.add_argument("--l_nll", type=float, default=1.0, help="Weight of nll latent loss.")
     parser.add_argument("--l_mse", type=float, default=0.1, help="Weight of mse length loss.")
-    parser.add_argument("--l_reg", type=float, default=0.0001, help="Weight of orthogonal regularization.")
+    parser.add_argument("--l_reg", type=float, default=1e-4, help="Weight of orthogonal regularization.")
 
     # Train parameters.
     parser.add_argument("--autocast", default=False, action="store_true", help="Whether to train with mixed precision.")
-    parser.add_argument("--log_dir", type=str, default="/share/pi/hackhack/vincent/ttsgan", help="Where to log all training outputs.")
+    parser.add_argument("--log_dir", type=str, default="logs/", help="Where to log all training outputs.")
     parser.add_argument("--max_grad_norm", type=float, default=1.0, help="Norm of gradients to clip to.")
 
     return parser.parse_args()
@@ -112,7 +111,6 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
                 scaler.unscale_(d_optimizer)
             else:
                 d_loss.backward()
-            trainer.apply_orthogonal_regularization(trainer.discriminator_parameters, weight=loss_weights["reg"])
             torch.nn.utils.clip_grad_norm_(trainer.discriminator_parameters, max_grad_norm)
             if autocast:
                 scaler.step(d_optimizer)
@@ -167,7 +165,7 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
             g_loss = 0.0
             for batch_idx, batch in enumerate(val_dataloader):
                 batch = [example.to(device) for example in batch]
-                d_loss_dict, g_loss_dict, y_pred, z_pred, z = trainer.step(*batch, jitter_steps=60, debug=True)
+                d_loss_dict, g_loss_dict, y, y_pred, z, z_pred = trainer.step(*batch, jitter_steps=60, debug=True)
 
                 # Accumulate discriminator loss.
                 d_loss += d_loss_dict["real"].item() + d_loss_dict["fake"].item()
@@ -181,8 +179,8 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
                 if batch_idx == 0:
                     writer.add_image("val_mel_target", plot_spectrogram_to_numpy(z[0].cpu().numpy()), global_step, dataformats="HWC")
                     writer.add_image("val_mel_predicted", plot_spectrogram_to_numpy(z_pred[0].cpu().numpy()), global_step, dataformats="HWC")
-                    writer.add_audio("val_audio_target", batch[2][0].cpu().numpy(), global_step, sample_rate=trainer.sampling_rate)
-                    writer.add_audio("val_audio_predicted", mu_inverse(y_pred[0]).cpu().numpy(), global_step, sample_rate=trainer.sampling_rate)
+                    writer.add_audio("val_audio_target", np.nan_to_num(y[0].cpu().numpy()), global_step, sample_rate=trainer.sampling_rate)
+                    writer.add_audio("val_audio_predicted", np.nan_to_num(y_pred[0].cpu().numpy()), global_step, sample_rate=trainer.sampling_rate)
 
             d_loss /= len(val_dataloader)
             g_loss /= len(val_dataloader)
@@ -200,7 +198,6 @@ def main():
     seed_everything(1234)
     torch.autograd.set_detect_anomaly(True)
     torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
 
     args = parse_arguments()
     with open(args.config, "r") as f:
@@ -216,7 +213,6 @@ def main():
     # Set constants.
     device = "cuda" if torch.cuda.is_available() else "cpu"
     length_scale = int(np.prod(config.trainer.audio_generator.decoder_scales))
-    sampling_rate = config.sampling_rate
     assert args.train_segment_length % length_scale == 0
     assert args.val_segment_length % length_scale == 0
 
@@ -234,15 +230,15 @@ def main():
             args.cmudict_file,
             args.train_segment_length,
             length_scale,
-            sampling_rate,
-            augment=args.data_augment,
+            config.trainer.sampling_rate,
+            mu_law=config.trainer.mu_law,
         ),
         collate_fn=AudioDataset.collate_fn,
         batch_size=args.train_batch_size,
         pin_memory=True,
         drop_last=True,
         shuffle=True,
-        num_workers=8,
+        num_workers=20,
     )
     val_dataloader = torch.utils.data.DataLoader(
         AudioDataset(
@@ -251,8 +247,8 @@ def main():
             args.cmudict_file,
             args.val_segment_length,
             length_scale,
-            sampling_rate,
-            augment=False,
+            config.trainer.sampling_rate,
+            mu_law=config.trainer.mu_law,
         ),
         collate_fn=AudioDataset.collate_fn,
         batch_size=args.val_batch_size,
@@ -263,9 +259,9 @@ def main():
     )
 
     # Instantiate optimizers and schedulers.
-    d_optimizer = torch.optim.AdamW(trainer.discriminator_parameters, lr=args.lr, weight_decay=args.weight_decay, betas=(0, 0.999))
+    d_optimizer = torch.optim.AdamW(trainer.discriminator_parameters, lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.999))
     d_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(d_optimizer, T_max=args.epochs)
-    g_optimizer = torch.optim.AdamW(trainer.generator_parameters, lr=args.lr, weight_decay=args.weight_decay, betas=(0, 0.999))
+    g_optimizer = torch.optim.AdamW(trainer.generator_parameters, lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.999))
     g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(g_optimizer, T_max=args.epochs)
 
     # Load checkpoint if specified.

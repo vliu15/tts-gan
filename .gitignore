@@ -1,5 +1,7 @@
 # Auxiliary repository files
 .vscode/
+ttsgan/
+logs/
 *.sh
 train_files.txt
 test_files.txt

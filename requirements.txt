@@ -4,9 +4,10 @@ librosa
 matplotlib
 numpy
 omegaconf
-performer-pytorch
 pyyaml
 scipy
 tabulate
+tensorboard
 torch>=1.6.0
+tqdm
 unidecode

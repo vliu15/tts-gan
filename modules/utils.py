@@ -21,15 +21,48 @@
 
 """ Contains auxiliary helper functions. """
 
+import functools
 import gc
 import math
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 import random
-import subprocess
 import torch
 import torch.nn as nn
+
+
+def compose(*fns):
+    """ Composes a list of functions. """
+    def compose2(f, g):
+        return lambda x: f(g(x))
+    return functools.reduce(compose2, fns, lambda x: x)
+
+
+def get_preprocessing_fn(mu_law: bool = True):
+    """ Returns sequential list of functions for preprocessing audio. """
+    fns = []
+    if mu_law:
+        fns += [mu_transform]
+    
+    # If no transforms. return identity function.
+    if len(fns) == 0:
+        return lambda x: x
+
+    return compose(*fns)
+
+def get_postprocessing_fn(mu_law: bool = True):
+    """ Returns sequential list of functions for postprocessing audio. """
+    fns = []
+
+    if mu_law:
+        fns += [mu_inverse]
+
+    # If no transforms. return identity function.
+    if len(fns) == 0:
+        return lambda x: x
+
+    return compose(*fns)
 
 
 def seed_everything(seed: int = 1234):
