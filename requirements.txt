@@ -8,6 +8,6 @@ pyyaml
 scipy
 tabulate
 tensorboard
-torch>=1.6.0
+torch==1.2.0
 tqdm
 unidecode

@@ -165,7 +165,7 @@ def print_batch_stats(batch, prefix="\t"):
 def print_cuda_memory(gpu: int = 0):
     """ Prints current memory stats of gpu. """
     t = torch.cuda.get_device_properties(gpu).total_memory
-    c = torch.cuda.memory_reserved(gpu)
+    c = torch.cuda.memory_cached(gpu)
     a = torch.cuda.memory_allocated(gpu)
 
     print("GPU {}".format(gpu))

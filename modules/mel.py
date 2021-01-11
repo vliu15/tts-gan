@@ -79,7 +79,7 @@ class MelSpectrogram(nn.Module):
         mel_basis = torch.from_numpy(mel_basis).float()
         self.register_buffer("mel_basis", mel_basis)
 
-    @torch.cuda.amp.autocast(enabled=False)
+    # @torch.cuda.amp.autocast(enabled=False)
     def forward(self, audio, jitter_steps: int = 0):
         assert audio.min() >= -1 and audio.max() <= 1
         # Add batch dimension if not already present.
@@ -94,7 +94,7 @@ class MelSpectrogram(nn.Module):
             audio = audio[:, random_start:random_start + length]
 
         # Full-precision for stft and log-mel computation.
-        magnitudes = self.stft.transform(audio.float())
+        magnitudes = self.stft.transform(audio)
         mel = torch.matmul(self.mel_basis, magnitudes)
         mel = torch.log(1 + 10000 * mel)  # shift and scale mel according to EATS.
 

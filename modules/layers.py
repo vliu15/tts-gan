@@ -21,7 +21,6 @@
 
 """ Contains common layers and networks. """
 
-from copy import deepcopy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -34,9 +33,8 @@ class SpectralNormConv1d(nn.Module):
         super().__init__()
         self.conv = nn.utils.spectral_norm(nn.Conv1d(*args, **kwargs), eps=1e-4)
 
-    @torch.cuda.amp.autocast(enabled=False)
     def forward(self, x):
-        return self.conv(x.float())
+        return self.conv(x)
 
 
 class BatchNorm1d(nn.BatchNorm1d):
