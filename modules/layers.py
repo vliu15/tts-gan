@@ -29,68 +29,31 @@ from modules.utils import ones_mask
 
 
 class SpectralNormConv1d(nn.Module):
+    """ Spectrally-normalized 1d convolution (wrapper). """
+
     def __init__(self, *args, **kwargs):
         super().__init__()
-        self.conv = nn.utils.spectral_norm(nn.Conv1d(*args, **kwargs), eps=1e-4)
+        self.conv = nn.utils.spectral_norm(nn.Conv1d(*args, **kwargs))
 
     def forward(self, x):
         return self.conv(x)
 
 
-class BatchNorm1d(nn.BatchNorm1d):
-    def __init__(self, num_features: int, eps: float = 1e-4, momentum: float = 0.1, affine: bool = True, track_running_stats: bool = True):
-        super().__init__(num_features, eps=eps, momentum=momentum, affine=affine, track_running_stats=track_running_stats)
-
-    def forward(self, x, mask=None):
-        return super().forward(x)
-
-
-class LayerNorm(nn.Module):
-    """ Layer normalization, applied to dimension 1 of inputs.
-
-    Args:
-        channels: number of channels of input
-        eps: small float to avoid division by 0
-
-    References:
-    > (Ba et al. 2016) Layer Normalization, https://arxiv.org/abs/1607.06450
-    """
-
-    def __init__(self, channels: int, eps: float = 1e-4):
-        super().__init__()
-        self.channels = channels
-        self.eps = eps
-
-        self.gamma = nn.Parameter(torch.ones(channels))
-        self.beta = nn.Parameter(torch.zeros(channels))
-
-    def forward(self, x, mask=None):
-        n_dims = len(x.shape)
-        mean = torch.mean(x, -1, keepdim=True)
-        variance = torch.mean((x - mean) ** 2, -1, keepdim=True)
-
-        x = (x - mean) * torch.rsqrt(variance + self.eps)
-
-        shape = [1, -1] + [1] * (n_dims - 2)
-        x = x * self.gamma.view(*shape) + self.beta.view(*shape)
-        return x
-
-
-class MaskedBatchNorm1d(nn.Module):
-    """ A masked version of nn.BatchNorm1d.
+class BatchNorm1d(nn.Module):
+    """ Batch normalization for 1d inputs. Supports input masks.
 
         Args:
             num_features: number of features in input channel
             eps: a value added to the denominator for numerical stability
             momentum: value used for the running_mean and running_var computation. Can be set to None for cumulative moving average
             affine: whether to learn affine parameters
-            track_running_stats: whether to tracksthe running mean and variance
+            track_running_stats: whether to tracks the running mean and variance
 
         References:
         > (Ioffe et al. 2015) Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift, https://arxiv.org/abs/1502.03167
     """
 
-    def __init__(self, num_features: int, eps: float = 1e-4, momentum: float = 0.1, affine: bool = True, track_running_stats: bool = True):
+    def __init__(self, num_features: int, eps: float = 1e-5, momentum: float = 0.1, affine: bool = True, track_running_stats: bool = True):
         super().__init__()
 
         self.num_features = num_features
@@ -98,15 +61,15 @@ class MaskedBatchNorm1d(nn.Module):
         self.momentum = momentum
         self.affine = affine
         if affine:
-            self.weight = nn.Parameter(torch.Tensor(num_features, 1))
-            self.bias = nn.Parameter(torch.Tensor(num_features, 1))
+            self.weight = nn.Parameter(torch.Tensor(num_features))
+            self.bias = nn.Parameter(torch.Tensor(num_features))
         else:
             self.register_parameter("weight", None)
             self.register_parameter("bias", None)
         self.track_running_stats = track_running_stats
         if self.track_running_stats:
-            self.register_buffer("running_mean", torch.zeros(num_features, 1))
-            self.register_buffer("running_var", torch.ones(num_features, 1))
+            self.register_buffer("running_mean", torch.zeros(num_features))
+            self.register_buffer("running_var", torch.ones(num_features))
             self.register_buffer("num_batches_tracked", torch.tensor(0, dtype=torch.long))
         else:
             self.register_parameter("running_mean", None)
@@ -147,25 +110,25 @@ class MaskedBatchNorm1d(nn.Module):
         # Update running stats.
         if self.track_running_stats and self.training:
             if self.num_batches_tracked == 0:
-                self.running_mean = current_mean
-                self.running_var = current_var
+                self.running_mean = current_mean.view(-1)
+                self.running_var = current_var.view(-1)
             else:
-                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * current_mean
-                self.running_var = (1 - self.momentum) * self.running_var + self.momentum * current_var
+                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * current_mean.view(-1)
+                self.running_var = (1 - self.momentum) * self.running_var + self.momentum * current_var.view(-1)
             self.num_batches_tracked += 1
         # Norm the input.
         if self.track_running_stats and not self.training:
-            normed = (masked - self.running_mean) / (torch.sqrt(self.running_var + self.eps))
+            normed = (masked - self.running_mean.view(1, -1, 1)) / (torch.sqrt(self.running_var.view(1, -1, 1) + self.eps))
         else:
             normed = (masked - current_mean) / (torch.sqrt(current_var + self.eps))
         # Apply affine parameters.
         if self.affine:
-            normed = normed * self.weight + self.bias
+            normed = normed * self.weight.view(1, -1, 1) + self.bias.view(1, -1, 1)
         return normed
 
 
-class MaskedLayerNorm(nn.Module):
-    """ A masked version of LayerNorm.
+class LayerNorm1d(nn.Module):
+    """ Layer normalization for 1d inputs. Supports input masks.
 
     Args:
         channels: number of channels of input
@@ -175,7 +138,7 @@ class MaskedLayerNorm(nn.Module):
     > (Ba et al. 2016) Layer Normalization, https://arxiv.org/abs/1607.06450
     """
 
-    def __init__(self, channels: int, eps: float = 1e-4):
+    def __init__(self, channels: int, eps: float = 1e-5):
         super().__init__()
         self.channels = channels
         self.eps = eps
@@ -184,22 +147,20 @@ class MaskedLayerNorm(nn.Module):
         self.beta = nn.Parameter(torch.zeros(channels))
 
     def forward(self, x, mask=None):
-        n_dims = len(x.shape)
         lens = torch.sum(mask, -1, keepdim=True)
         mean = torch.sum(x * mask, -1, keepdim=True) / lens
         variance = torch.sum(((x - mean) ** 2) * mask, -1, keepdim=True) / lens
 
         x = (x - mean) * torch.rsqrt(variance + self.eps)
 
-        shape = [1, -1] + [1] * (n_dims - 2)
-        x = x * self.gamma.view(*shape) + self.beta.view(*shape)
+        x = x * self.gamma.view(1, -1, 1) + self.beta.view(1, -1, 1)
         return x * mask
 
 
 class ResBlock1d(nn.Module):
     """ Residual block with option for upsampling or downsampling.
     
-    Increases dilation by a factor of 2. Architecture adapted from GBlock in GAN-TTS.
+    Increases dilation by a factor of 2. Architecture adapted from GBlock and DBlock in GAN-TTS.
 
     Args:
         in_channels: number of channels of input
@@ -219,10 +180,10 @@ class ResBlock1d(nn.Module):
         in_channels: int,
         hidden_channels: int,
         kernel_size: int = 3,
-        dilation: int = 2,
-        scale_factor: int = 2,
+        dilation: int = 1,
+        scale_factor: int = 1,
         activation: callable = F.relu,
-        normalization: nn.Module = BatchNorm1d,
+        normalization: nn.Module = None,
         spectral_norm: bool = False,
     ):
         super().__init__()

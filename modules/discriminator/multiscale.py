@@ -23,7 +23,7 @@
 
 import torch.nn as nn
 
-from modules.layers import BatchNorm1d, ResBlock1d, SpectralNormConv1d
+from modules.layers import ResBlock1d, SpectralNormConv1d
 
 
 class Discriminator(nn.Module):

@@ -162,7 +162,6 @@ class _SoftDTWCUDA(Function):
     """
 
     @staticmethod
-    # @torch.cuda.amp.custom_fwd
     def forward(ctx, D, penalty, gamma, bandwidth):
         dev = D.device
         dtype = D.dtype
@@ -190,7 +189,6 @@ class _SoftDTWCUDA(Function):
         return R[:, -2, -2]
 
     @staticmethod
-    # @torch.cuda.amp.custom_bwd
     def backward(ctx, grad_output):
         dev = grad_output.device
         dtype = grad_output.dtype

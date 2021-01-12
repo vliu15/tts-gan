@@ -156,9 +156,14 @@ class Trainer(nn.Module):
 
         return d_loss_dict, g_loss_dict, y, y_pred, z, z_pred
 
+    @torch.no_grad()
     def infer(self, x, x_len=None):
         """ Runs inference on input phoneme sequences. """
-
+        if x_len is None:
+            x_len = x.size(-1) * torch.ones(x.size(0), device=x.device).long()
+        _, y_pred, _ = self.audio_generator(x, x_len, y_len=None, y_offset=None)
+        y_pred = self.post_fn(y_pred)
+        return y_pred
 
     def print_model_summary(self):
         """ Outputs summary of module parameters. """

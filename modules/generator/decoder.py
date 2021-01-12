@@ -26,7 +26,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import List
 
-from modules.layers import LayerNorm, MaskedBatchNorm1d, MaskedLayerNorm, ResBlock1d, SpectralNormConv1d
+from modules.layers import BatchNorm1d, ResBlock1d, SpectralNormConv1d
 from modules.utils import sequence_mask
 
 
@@ -63,13 +63,13 @@ class Decoder(nn.Module):
         self.blocks = nn.ModuleList()
         for i, scale_factor in enumerate(scale_factors):
             self.blocks += [
-                ResBlock1d(channels, channels, kernel_size=kernel_size, dilation=1, scale_factor=scale_factor, activation=self.activation, normalization=MaskedBatchNorm1d, spectral_norm=False),
-                ResBlock1d(channels, channels, kernel_size=kernel_size, dilation=4, scale_factor=1, activation=self.activation, normalization=MaskedBatchNorm1d, spectral_norm=False),
-                ResBlock1d(channels, channels // 2, kernel_size=kernel_size, dilation=16, scale_factor=1, activation=self.activation, normalization=MaskedBatchNorm1d, spectral_norm=False),
+                ResBlock1d(channels, channels, kernel_size=kernel_size, dilation=1, scale_factor=scale_factor, activation=self.activation, normalization=BatchNorm1d, spectral_norm=False),
+                ResBlock1d(channels, channels, kernel_size=kernel_size, dilation=4, scale_factor=1, activation=self.activation, normalization=BatchNorm1d, spectral_norm=False),
+                ResBlock1d(channels, channels // 2, kernel_size=kernel_size, dilation=16, scale_factor=1, activation=self.activation, normalization=BatchNorm1d, spectral_norm=False),
             ]
             channels //= 2
 
-        self.norm_out = MaskedBatchNorm1d(channels)
+        self.norm_out = BatchNorm1d(channels)
         self.proj_out = nn.Conv1d(channels, 1, 1)
 
     def forward(self, y, y_len):

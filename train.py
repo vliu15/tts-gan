@@ -60,7 +60,7 @@ def parse_arguments():
     # Optimizer & scheduler.
     parser.add_argument("--lr", type=float, default=0.0001, help="Initial learning rate.")
     parser.add_argument("--weight_decay", type=float, default=0.0001, help="Weight decay value.")
-    parser.add_argument("--epochs", type=int, default=10000, help="Number of epochs to train for.")
+    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs to train for.")
 
     # Loss weights.
     parser.add_argument("--l_nll", type=float, default=1.0, help="Weight of nll latent loss.")
@@ -68,14 +68,13 @@ def parse_arguments():
     parser.add_argument("--l_reg", type=float, default=1e-4, help="Weight of orthogonal regularization.")
 
     # Train parameters.
-    parser.add_argument("--autocast", default=False, action="store_true", help="Whether to train with mixed precision.")
     parser.add_argument("--log_dir", type=str, default="/home/vliu15/tts-gan/logs", help="Where to log all training outputs.")
     parser.add_argument("--max_grad_norm", type=float, default=1.0, help="Norm of gradients to clip to.")
 
     return parser.parse_args()
 
 
-def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, log_dir, device, autocast: bool = False, max_grad_norm: float = 1.0):
+def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, log_dir, device, max_grad_norm: float = 1.0):
     """ Trains model fully. """
     # Unpack.
     start_epoch, end_epoch = epochs
@@ -128,6 +127,7 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
 
         # Post epoch management.
         pbar.close()
+        global_step += 1
         d_scheduler.step()
         g_scheduler.step()
         if (i + 1) % 5 == 0:
@@ -170,8 +170,6 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
             writer.add_scalar("val_d_loss", d_loss, global_step)
             writer.add_scalar("val_g_loss", g_loss, global_step)
             print("[validation,epoch={}] d: {}, g: {}".format(global_step, round(d_loss, 4), round(g_loss, 4)))
-
-        global_step += 1
 
 
 def main():
@@ -266,7 +264,6 @@ def main():
         {"nll": args.l_nll, "mse": args.l_mse, "reg": args.l_reg},
         log_dir,
         device,
-        autocast=args.autocast,
         max_grad_norm=args.max_grad_norm,
     )
 

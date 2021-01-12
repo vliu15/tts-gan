@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from modules.layers import BatchNorm1d, ResBlock1d, SpectralNormConv1d
+from modules.layers import ResBlock1d, SpectralNormConv1d
 
 
 class RandomWindowDiscriminator(nn.Module):

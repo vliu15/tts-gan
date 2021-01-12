@@ -26,7 +26,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from modules.layers import LayerNorm, MaskedBatchNorm1d, MaskedLayerNorm, ResBlock1d
+from modules.layers import LayerNorm1d, ResBlock1d
 from modules.utils import ones_mask, sequence_mask
 
 
@@ -51,9 +51,9 @@ class DurationPredictor(nn.Module):
         self.conv2 = nn.Conv1d(hidden_channels, hidden_channels, kernel_size, padding=kernel_size // 2)
         self.conv3 = nn.Conv1d(hidden_channels, hidden_channels, kernel_size, padding=kernel_size // 2)
 
-        self.norm1 = MaskedLayerNorm(hidden_channels)
-        self.norm2 = MaskedLayerNorm(hidden_channels)
-        self.norm3 = MaskedLayerNorm(hidden_channels)
+        self.norm1 = LayerNorm1d(hidden_channels)
+        self.norm2 = LayerNorm1d(hidden_channels)
+        self.norm3 = LayerNorm1d(hidden_channels)
 
         self.activation = F.gelu
 
@@ -119,9 +119,9 @@ class Encoder(nn.Module):
         self.blocks = nn.ModuleList()
         for _ in range(n_layers):
             self.blocks += [
-                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=1, scale_factor=1, activation=self.activation, normalization=MaskedLayerNorm),
-                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=4, scale_factor=1, activation=self.activation, normalization=MaskedLayerNorm),
-                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=16, scale_factor=1, activation=self.activation, normalization=MaskedLayerNorm),
+                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=1, scale_factor=1, activation=self.activation, normalization=LayerNorm1d),
+                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=4, scale_factor=1, activation=self.activation, normalization=LayerNorm1d),
+                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=16, scale_factor=1, activation=self.activation, normalization=LayerNorm1d),
             ]
 
         self.proj_l = nn.Conv1d(hidden_channels, out_channels, 1)
