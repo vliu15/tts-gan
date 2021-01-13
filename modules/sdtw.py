@@ -19,7 +19,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-""" Script containing soft dynamic time warping loss implementations. """
+""" Script containing soft dynamic time warping losses with warping penalty. """
 
 import math
 from numba import cuda, jit

@@ -24,6 +24,7 @@
 import argparse
 from datetime import datetime
 from hydra.utils import instantiate
+import math
 import numpy as np
 from omegaconf import OmegaConf
 import os
@@ -89,13 +90,13 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
     for i in range(start_epoch, end_epoch):
 
         # For weighting hard and soft spectrogram prediction loss.
-        alpha = max(float(i) / end_epoch / 2., 1.)
-        loss_weights["hard"] = 1. - alpha
-        loss_weights["soft"] = alpha
+        alpha = math.exp(-i / math.sqrt(end_epoch))
+        loss_weights["hard"] = alpha
+        loss_weights["soft"] = 1. - alpha
 
         trainer.train()
-        pbar = tqdm(enumerate(train_dataloader), total=len(train_dataloader), desc="[version={},epoch={}]".format(version, i))
-        for batch_idx, batch in pbar:
+        pbar = tqdm(train_dataloader, total=len(train_dataloader), mininterval=1, desc="[version={},epoch={}]".format(version, i))
+        for batch_idx, batch in enumerate(pbar):
             batch = [example.to(device) for example in batch]
 
             # Discriminator.
@@ -103,7 +104,6 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
             d_loss_dict = trainer.d_step(*batch, jitter_steps=60, debug=(batch_idx % 50 == 0))
             d_loss = d_loss_dict["real"] + d_loss_dict["fake"]
             d_loss.backward()
-            # trainer.apply_orthogonal_regularization(trainer.discriminator_parameters, weight=loss_weights["reg"])
             torch.nn.utils.clip_grad_norm_(trainer.discriminator_parameters, max_grad_norm)
             d_optimizer.step()
 
@@ -120,7 +120,6 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
             g_optimizer.step()
 
             # Log training losses.
-            pbar.update(1)
             pbar.set_description("[version={},epoch={}] d: {}, g: {}".format(version, i, round(d_loss.item(), 4), round(g_loss.item(), 4)))
             global_step += 1
             writer.add_scalar("train_d_loss", d_loss.item(), global_step)

@@ -22,7 +22,6 @@
 """ Contains auxiliary helper functions. """
 
 import functools
-import gc
 import math
 import matplotlib.pyplot as plt
 import numpy as np
@@ -172,4 +171,3 @@ def print_cuda_memory(gpu: int = 0):
     print("\tTotal memory: {}".format(t))
     print("\tCached memory: {}".format(c))
     print("\tAllocated memory: {}".format(a))
-

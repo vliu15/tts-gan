@@ -21,7 +21,6 @@
 
 """ Contains high-level modules for training adversarial text-to-speech models. """
 
-import gc
 from hydra.utils import instantiate
 import numpy as np
 from omegaconf import DictConfig
@@ -35,7 +34,7 @@ from modules.utils import get_postprocessing_fn, print_batch_stats, print_cuda_m
 
 class Trainer(nn.Module):
     """ Trainer for generative adversarial text-to-speech model.
-    
+
     Args:
         sampling_rate: sampling rate of the audio trained to generate
         audio_generator: structured config for audio generator
@@ -43,7 +42,6 @@ class Trainer(nn.Module):
         spect_discriminator: structured config for spectrogram discriminator
         spect_fn: structured config for spectrogram function
         sdtw_fn: structured config for soft dynamic time warping function
-        rescale_factor: factor by which audio is rescaled in preprocessing
         mu_law: whether to learn mu-transformed audio directly
     """
 
@@ -108,7 +106,6 @@ class Trainer(nn.Module):
         z_pred_d = self.spect_discriminator(z_pred)
 
         loss_dict = self.d_loss(y_d, y_pred_d, z_d, z_pred_d, debug=debug)
-        gc.collect()
         return loss_dict
 
     def g_step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 0, debug: bool = False):
@@ -123,7 +120,6 @@ class Trainer(nn.Module):
         z_pred_g = self.spect_discriminator(z_pred)
 
         loss_dict = self.g_loss(x_latents, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug=debug)
-        gc.collect()
         return loss_dict
 
     def step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 60, debug: bool = False):

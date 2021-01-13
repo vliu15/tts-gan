@@ -147,6 +147,6 @@ class Encoder(nn.Module):
 
         # Project to latent and duration variables.
         x_l = self.proj_l(x * mask)
-        x_d = self.proj_d(x, mask=mask)
+        x_d = self.proj_d(x.detach(), mask=mask)
 
         return x_l * mask, x_d, mask
