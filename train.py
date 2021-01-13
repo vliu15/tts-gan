@@ -33,7 +33,7 @@ from tqdm import tqdm
 import yaml
 
 from dataset import AudioDataset
-from modules.utils import mu_inverse, plot_spectrogram_to_numpy, seed_everything, weights_init
+from modules.utils import plot_spectrogram_to_numpy, seed_everything, weights_init
 from trainer import Trainer
 
 
@@ -89,7 +89,7 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
     for i in range(start_epoch, end_epoch):
 
         # For weighting hard and soft spectrogram prediction loss.
-        alpha = float(i) / end_epoch
+        alpha = max(float(i) / end_epoch / 2., 1.)
         loss_weights["hard"] = 1. - alpha
         loss_weights["soft"] = alpha
 
@@ -122,12 +122,12 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
             # Log training losses.
             pbar.update(1)
             pbar.set_description("[version={},epoch={}] d: {}, g: {}".format(version, i, round(d_loss.item(), 4), round(g_loss.item(), 4)))
+            global_step += 1
             writer.add_scalar("train_d_loss", d_loss.item(), global_step)
             writer.add_scalar("train_g_loss", g_loss.item(), global_step)
 
         # Post epoch management.
         pbar.close()
-        global_step += 1
         d_scheduler.step()
         g_scheduler.step()
         if (i + 1) % 5 == 0:

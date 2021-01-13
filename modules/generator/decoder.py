@@ -69,7 +69,6 @@ class Decoder(nn.Module):
             ]
             channels //= 2
 
-        self.norm_out = BatchNorm1d(channels)
         self.proj_out = nn.Conv1d(channels, 1, 1)
 
     def forward(self, y, y_len):

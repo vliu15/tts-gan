@@ -92,7 +92,7 @@ class MelSpectrogram(nn.Module):
             random_start = random.randint(0, 2 * jitter_steps)
             audio = audio[:, random_start:random_start + length]
 
-        # Full-precision for stft and log-mel computation.
+        # Compute stft and log-mel.
         magnitudes = self.stft.transform(audio)
         mel = torch.matmul(self.mel_basis, magnitudes)
         mel = torch.log(1 + 10000 * mel)  # shift and scale mel according to EATS.
