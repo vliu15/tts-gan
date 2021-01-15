@@ -75,7 +75,22 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, log_dir, device, max_grad_norm: float = 1.0):
+def train(
+    trainer: nn.Module,
+    train_dataloader: torch.utils.data.DataLoader,
+    val_dataloader: torch.utils.data.DataLoader,
+    d_optimizer: torch.optim.Optimizer,
+    g_optimizer: torch.optim.Optimizer,
+    d_scheduler: torch.optim.lr_scheduler._LRScheduler,
+    g_scheduler: torch.optim.lr_scheduler._LRScheduler,
+    log_dir: str,
+    end_epoch: int,
+    start_epoch: int = 0,
+    global_step: int = 0,
+    loss_weights: dict = {},
+    device: str = "cuda",
+    max_grad_norm: float = 1.0,
+):
     """ Trains model fully. """
     # Unpack.
     start_epoch, end_epoch = epochs
@@ -83,7 +98,6 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
     d_optimizer, g_optimizer = optimizers
     d_scheduler, g_scheduler = schedulers
 
-    global_step = 0
     writer = SummaryWriter(log_dir)
     version = os.path.basename(log_dir)
 
@@ -131,13 +145,14 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
         g_scheduler.step()
         if (i + 1) % 5 == 0:
             torch.save({
-                "epoch": i,
+                "epoch": i + 1,
+                "global_step": global_step,
                 "trainer": trainer.state_dict(),
                 "d_optim": d_optimizer.state_dict(),
                 "g_optim": g_optimizer.state_dict(),
                 "d_sched": d_scheduler.state_dict(),
                 "g_sched": g_scheduler.state_dict(),
-            }, os.path.join(log_dir, "model_{}.pt".format(i)))
+            }, os.path.join(log_dir, "model_{}.pt".format(i + 1)))
 
         trainer.eval()
         with torch.no_grad():
@@ -168,7 +183,7 @@ def train(trainer, epochs, dataloaders, optimizers, schedulers, loss_weights, lo
             # Log validation losses.
             writer.add_scalar("val_d_loss", d_loss, global_step)
             writer.add_scalar("val_g_loss", g_loss, global_step)
-            print("[validation,epoch={}] d: {}, g: {}".format(global_step, round(d_loss, 4), round(g_loss, 4)))
+            print("[validation,epoch={}] d: {}, g: {}".format(i, round(d_loss, 4), round(g_loss, 4)))
 
 
 def main():
@@ -244,9 +259,11 @@ def main():
 
     # Load checkpoint if specified.
     start_epoch = 0
+    global_step = 0
     if args.resume is not None:
         checkpoint = torch.load(args.resume)
-        start_epoch = checkpoint["epoch"] + 1
+        start_epoch = checkpoint.get("epoch", 0)
+        global_step = checkpoint.get("global_step", 0)
         trainer.load_state_dict(checkpoint["trainer"])
         d_optimizer.load_state_dict(checkpoint["d_optim"])
         g_optimizer.load_state_dict(checkpoint["g_optim"])
@@ -256,13 +273,18 @@ def main():
     # Train.
     train(
         trainer,
-        (start_epoch, args.epochs),
-        (train_dataloader, val_dataloader),
-        (d_optimizer, g_optimizer),
-        (d_scheduler, g_scheduler),
-        {"nll": args.l_nll, "mse": args.l_mse, "reg": args.l_reg},
+        train_dataloader,
+        val_dataloader,
+        d_optimizer,
+        g_optimizer,
+        d_scheduler,
+        g_scheduler,
         log_dir,
-        device,
+        args.epochs,
+        start_epoch=start_epoch,
+        global_step=global_step,
+        loss_weights={"nll": args.l_nll, "mse": args.l_mse, "reg": args.l_reg},
+        device=device,
         max_grad_norm=args.max_grad_norm,
     )
 

@@ -26,7 +26,6 @@ from numba import cuda, jit
 import numpy as np
 import torch
 from torch.autograd import Function
-import torch.cuda
 import torch.nn.functional as F
 
 
