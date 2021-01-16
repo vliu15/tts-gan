@@ -29,6 +29,7 @@ import numpy as np
 from omegaconf import OmegaConf
 import os
 import torch
+import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import yaml
@@ -92,12 +93,6 @@ def train(
     max_grad_norm: float = 1.0,
 ):
     """ Trains model fully. """
-    # Unpack.
-    start_epoch, end_epoch = epochs
-    train_dataloader, val_dataloader = dataloaders
-    d_optimizer, g_optimizer = optimizers
-    d_scheduler, g_scheduler = schedulers
-
     writer = SummaryWriter(log_dir)
     version = os.path.basename(log_dir)
 
