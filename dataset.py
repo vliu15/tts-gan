@@ -143,7 +143,6 @@ class AudioDataset(Dataset):
         # Populate padded tensors.
         for i in range(len(batch)):
             x[i, :len(text[i])] = text[i]
-            y[i, :len(audio[i])] = audio[i]
 
         return x, x_len, y, y_len, y_offset, slice_length
 

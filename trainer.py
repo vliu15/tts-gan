@@ -66,31 +66,33 @@ class Trainer(nn.Module):
 
     def d_loss(self, y_d, y_pred_d, z_d, z_pred_d, debug: bool = False):
         """ Computes loss for discriminators. """
-        l_real = sum(((pred - 1.) ** 2).mean(0).sum() for pred in y_d + z_d)
-        l_fake = sum((pred ** 2).mean(0).sum() for pred in y_pred_d + z_pred_d)
+        # l_real = F.relu(1 - y_d).mean() + F.relu(1 - z_d).mean()
+        # l_fake = F.relu(1 + y_pred_d).mean() + F.relu(1 + z_pred_d).mean()
+        l_real = ((y_d - 1) ** 2).mean() + ((z_d - 1) ** 2).mean()
+        l_fake = (y_pred_d ** 2).mean() + (z_pred_d ** 2).mean()
 
         if debug:
             print_list_values(l_real, l_fake, prefix="d\t")
 
         return {"real": l_real, "fake": l_fake}
 
-    def g_loss(self, x_latents, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug: bool = False):
+    def g_loss(self, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug: bool = False):
         """ Computes loss for generator. """
-        l_nll = 0.5 * (x_latents ** 2).mean()
-        l_adv = sum(((pred - 1.) ** 2).mean(0).sum() for pred in y_pred_g + z_pred_g)
+        # l_adv = -y_pred_g.mean() + -z_pred_g.mean()
+        l_adv = ((y_pred_g - 1) ** 2).mean() + ((z_pred_g - 1) ** 2).mean()
         l_hard = F.l1_loss(z, z_pred)
         l_soft = self.sdtw_fn(z, z_pred)
         l_mse = 0.5 * ((y_len.float() - y_pred_len.float()) ** 2).mean()
 
         if debug:
-            print_list_values(l_nll, l_adv, l_hard, l_soft, l_mse, prefix="g\t")
+            print_list_values(l_adv, l_hard, l_soft, l_mse, prefix="g\t")
 
-        return {"nll": l_nll, "adv": l_adv, "hard": l_hard, "soft": l_soft, "mse": l_mse}
+        return {"adv": l_adv, "hard": l_hard, "soft": l_soft, "mse": l_mse}
 
     def d_step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 0, debug: bool = False):
         """ Computes one step through the discriminator. """
         with torch.no_grad():
-            x_latents, y_pred, y_pred_len = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
+            y_pred, y_pred_len, x_latents, y_latents = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
             z_pred = self.spect_fn(self.post_fn(y_pred), jitter_steps=0)
             z = self.spect_fn(self.post_fn(y), jitter_steps=jitter_steps)
 
@@ -99,6 +101,7 @@ class Trainer(nn.Module):
             print_batch_stats(y, prefix="y*\t")
             print_batch_stats(y_pred, prefix="y^\t")
             print_batch_stats(x_latents, prefix="xl\t")
+            print_batch_stats(y_latents, prefix="yl\t")
 
         y_d = self.audio_discriminator(y)
         y_pred_d = self.audio_discriminator(y_pred)
@@ -106,51 +109,26 @@ class Trainer(nn.Module):
         z_pred_d = self.spect_discriminator(z_pred)
 
         loss_dict = self.d_loss(y_d, y_pred_d, z_d, z_pred_d, debug=debug)
-        return loss_dict
-
-    def g_step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 0, debug: bool = False):
-        """ Computes one step through the generator. """
-        x_latents, y_pred, y_pred_len = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
-        z_pred = self.spect_fn(self.post_fn(y_pred), jitter_steps=0)
-
-        with torch.no_grad():
-            z = self.spect_fn(self.post_fn(y), jitter_steps=jitter_steps)
-
-        y_pred_g = self.audio_discriminator(y_pred)
-        z_pred_g = self.spect_discriminator(z_pred)
-
-        loss_dict = self.g_loss(x_latents, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug=debug)
-        return loss_dict
-
-    def step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 60, debug: bool = False):
-        """ Completes one full step through the model. """
-        x_latents, y_pred, y_pred_len = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
-        z_pred = self.spect_fn(self.post_fn(y_pred), jitter_steps=0)
-
-        with torch.no_grad():
-            z = self.spect_fn(self.post_fn(y), jitter_steps=jitter_steps)
-
-        if debug:
-            print_batch_stats(y, prefix="y*\t")
-            print_batch_stats(y_pred, prefix="y^\t")
-            print_batch_stats(x_latents, prefix="xl\t")
-
-        y_d = self.audio_discriminator(y.detach())
-        y_pred_d = self.audio_discriminator(y_pred.detach())
-        z_d = self.spect_discriminator(z.detach())
-        z_pred_d = self.spect_discriminator(z_pred.detach())
-
-        y_pred_g = self.audio_discriminator(y_pred)
-        z_pred_g = self.spect_discriminator(z_pred)
-
-        d_loss_dict = self.d_loss(y_d, y_pred_d, z_d, z_pred_d, debug=debug)
-        g_loss_dict = self.g_loss(x_latents, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug=debug)
 
         with torch.no_grad():
             y = self.post_fn(y)
             y_pred = self.post_fn(y_pred)
 
-        return d_loss_dict, g_loss_dict, y, y_pred, z, z_pred
+        return loss_dict, y, y_pred, z, z_pred
+
+    def g_step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 0, debug: bool = False):
+        """ Computes one step through the generator. """
+        y_pred, y_pred_len, _, _ = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
+        z_pred = self.spect_fn(self.post_fn(y_pred), jitter_steps=0)
+
+        with torch.no_grad():
+            z = self.spect_fn(self.post_fn(y), jitter_steps=jitter_steps)
+
+        y_pred_g = self.audio_discriminator(y_pred)
+        z_pred_g = self.spect_discriminator(z_pred)
+
+        loss_dict = self.g_loss(y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug=debug)
+        return loss_dict
 
     @torch.no_grad()
     def infer(self, x, x_len=None):
@@ -193,10 +171,10 @@ class Trainer(nn.Module):
 
     @staticmethod
     @torch.no_grad()
-    def apply_orthogonal_regularization(parameters, weight: float = 1e-4):
+    def apply_orthogonal_regularization(named_parameters, weight: float = 1e-4):
         """ Computes and applies off-diagonal orthogonal regularization directly to specified parameters."""
-        for param in parameters:
-            if len(param.shape) < 2 or param.grad is None:
+        for name, param in named_parameters:
+            if len(param.shape) < 2 or param.grad is None or "emb" in name:
                 continue
             w = param.view(param.shape[0], -1)
             grad = (2 * torch.mm(torch.mm(w, w.t()) - torch.eye(w.shape[0], device=w.device), w))
@@ -207,8 +185,16 @@ class Trainer(nn.Module):
         return list(self.audio_discriminator.parameters()) + list(self.spect_discriminator.parameters())
 
     @property
+    def named_discriminator_parameters(self):
+        return list(self.audio_discriminator.named_parameters()) + list(self.spect_discriminator.named_parameters())
+
+    @property
     def generator_parameters(self):
         return list(self.audio_generator.parameters())
+
+    @property
+    def named_generator_parameters(self):
+        return list(self.audio_generator.named_parameters())
 
     @property
     def parameters(self):

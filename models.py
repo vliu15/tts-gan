@@ -65,7 +65,7 @@ class AudioGenerator(nn.Module):
         y_latents = self.aligner(x_latents, x_lengths, x_mask, y_len, y_offset=y_offset)
         y, y_mask = self.decoder(y_latents, y_len)
 
-        return x_latents, y, y_pred_len
+        return y, y_pred_len, x_latents, y_latents
 
 
 class AudioDiscriminator(nn.Module):
@@ -86,11 +86,11 @@ class AudioDiscriminator(nn.Module):
         ])
 
     def forward(self, y):
-        outputs = []
+        output = 0.0
         for i, window in enumerate(self.windows):
             start = random.randint(0, y.size(-1) - window)
-            outputs += [self.discriminators[i](y[:, start:start + window])]
-        return outputs
+            output += self.discriminators[i](y[:, start:start + window])
+        return output
 
 
 class SpectrogramDiscriminator(nn.Module):

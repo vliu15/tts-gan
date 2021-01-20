@@ -47,9 +47,9 @@ class Decoder(nn.Module):
 
     def __init__(
         self,
-        scale_factors: List[int] = [2, 3, 3, 5],
-        in_channels: int = 256,
-        hidden_channels: int = 256,
+        scale_factors: List[int] = [1, 2, 3, 3, 5],
+        in_channels: int = 128,
+        hidden_channels: int = 512,
         kernel_size: int = 3,
     ):
         super().__init__()
@@ -64,8 +64,7 @@ class Decoder(nn.Module):
         for i, scale_factor in enumerate(scale_factors):
             self.blocks += [
                 ResBlock1d(channels, channels, kernel_size=kernel_size, dilation=1, scale_factor=scale_factor, activation=self.activation, normalization=BatchNorm1d, spectral_norm=False),
-                ResBlock1d(channels, channels, kernel_size=kernel_size, dilation=4, scale_factor=1, activation=self.activation, normalization=BatchNorm1d, spectral_norm=False),
-                ResBlock1d(channels, channels // 2, kernel_size=kernel_size, dilation=16, scale_factor=1, activation=self.activation, normalization=BatchNorm1d, spectral_norm=False),
+                ResBlock1d(channels, channels // 2, kernel_size=kernel_size, dilation=4, scale_factor=1, activation=self.activation, normalization=BatchNorm1d, spectral_norm=False),
             ]
             channels //= 2
 
@@ -84,9 +83,8 @@ class Decoder(nn.Module):
 
         # Apply decoder blocks.
         for i in range(self.n_layers):
-            y, mask = self.blocks[3 * i](y, mask=mask)
-            y, mask = self.blocks[3 * i + 1](y, mask=mask)
-            y, mask = self.blocks[3 * i + 2](y, mask=mask)
+            y, mask = self.blocks[2 * i](y, mask=mask)
+            y, mask = self.blocks[2 * i + 1](y, mask=mask)
 
         # Project to audio waveform.
         y = self.proj_out(y * mask)

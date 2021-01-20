@@ -8,24 +8,24 @@ trainer:
   audio_generator:
     _target_: models.AudioGenerator
     align_gamma: 10.0
-    encoder_layers: 10
+    encoder_layers: 8
     encoder_channels: 256
     decoder_scales: [1, 2, 3, 3, 5]
-    decoder_channels: 256
-    latent_channels: 256
+    decoder_channels: 512
+    latent_channels: 128
     kernel_size: 3
 
   audio_discriminator:
     _target_: models.AudioDiscriminator
     windows: [200, 400, 800, 1600, 3200]
-    n_layers: 4
+    n_layers: 3
     base_channels: 64
     kernel_size: 3
 
   spect_discriminator:
     _target_: models.SpectrogramDiscriminator
     n_discs: 3
-    n_layers: 4
+    n_layers: 3
     mel_channels: *mel_channels
     base_channels: 64
     kernel_size: 3

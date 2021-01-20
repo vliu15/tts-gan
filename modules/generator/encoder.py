@@ -21,12 +21,11 @@
 
 """ Contains encoder module for GAN-TTS models. """
 
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from modules.layers import LayerNorm1d, ResBlock1d
+from modules.layers import BatchNorm1d, ResBlock1d
 from modules.utils import ones_mask, sequence_mask
 
 
@@ -51,9 +50,9 @@ class DurationPredictor(nn.Module):
         self.conv2 = nn.Conv1d(hidden_channels, hidden_channels, kernel_size, padding=kernel_size // 2)
         self.conv3 = nn.Conv1d(hidden_channels, hidden_channels, kernel_size, padding=kernel_size // 2)
 
-        self.norm1 = LayerNorm1d(hidden_channels)
-        self.norm2 = LayerNorm1d(hidden_channels)
-        self.norm3 = LayerNorm1d(hidden_channels)
+        self.norm1 = BatchNorm1d(hidden_channels)
+        self.norm2 = BatchNorm1d(hidden_channels)
+        self.norm3 = BatchNorm1d(hidden_channels)
 
         self.activation = F.gelu
 
@@ -119,11 +118,12 @@ class Encoder(nn.Module):
         self.blocks = nn.ModuleList()
         for _ in range(n_layers):
             self.blocks += [
-                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=1, scale_factor=1, activation=self.activation, normalization=LayerNorm1d),
-                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=4, scale_factor=1, activation=self.activation, normalization=LayerNorm1d),
-                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=16, scale_factor=1, activation=self.activation, normalization=LayerNorm1d),
+                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=1, scale_factor=1, activation=self.activation, normalization=BatchNorm1d),
+                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=4, scale_factor=1, activation=self.activation, normalization=BatchNorm1d),
+                ResBlock1d(hidden_channels, hidden_channels, kernel_size=kernel_size, dilation=16, scale_factor=1, activation=self.activation, normalization=BatchNorm1d),
             ]
 
+        self.norm_l = BatchNorm1d(hidden_channels)
         self.proj_l = nn.Conv1d(hidden_channels, out_channels, 1)
         self.proj_d = DurationPredictor(hidden_channels, kernel_size=kernel_size)
 
@@ -133,7 +133,7 @@ class Encoder(nn.Module):
         x_len: [b]
         """
         # Embed input text.
-        x = self.emb(x) * math.sqrt(self.hidden_channels)  # [b, t_x, c]
+        x = self.emb(x)  # [b, t_x, c]
         x = x.permute(0, 2, 1)  # [b, c, t_x]
 
         # Create mask for collated text.
@@ -146,7 +146,10 @@ class Encoder(nn.Module):
             x, mask = self.blocks[3 * i + 2](x, mask=mask)
 
         # Project to latent and duration variables.
-        x_l = self.proj_l(x * mask)
-        x_d = self.proj_d(x.detach(), mask=mask)
+        x_l = self.norm_l(x, mask=mask)
+        x_l = self.activation(x_l)
+        x_l = self.proj_l(x_l * mask)
+
+        x_d = self.proj_d(x, mask=mask)
 
         return x_l * mask, x_d, mask

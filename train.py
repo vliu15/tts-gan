@@ -52,26 +52,21 @@ def parse_arguments():
     parser.add_argument("--cmudict_file", type=str, default="/home/vliu15/cmu_dictionary", help="Path to CMU phoneme dictionary.")
 
     parser.add_argument("--train_files", type=str, default="train_files.txt", help="Path to list of train files.")
-    parser.add_argument("--train_batch_size", type=int, default=32, help="Batch size for training.")
+    parser.add_argument("--train_batch_size", type=int, default=64, help="Batch size for training.")
     parser.add_argument("--train_segment_length", type=int, default=18000, help="Audio segment length for training.")
 
-    parser.add_argument("--val_files", type=str, default="test_files.txt", help="Path to list of validation files.")
-    parser.add_argument("--val_batch_size", type=int, default=16, help="Batch size for validation.")
-    parser.add_argument("--val_segment_length", type=int, default=36000, help="Audio segment length for validation.")
-
     # Optimizer & scheduler.
-    parser.add_argument("--lr", type=float, default=0.0001, help="Initial learning rate.")
-    parser.add_argument("--weight_decay", type=float, default=0.0001, help="Weight decay value.")
-    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs to train for.")
+    parser.add_argument("--lr", type=float, default=2e-4, help="Initial learning rate.")
+    parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay value.")
+    parser.add_argument("--epochs", type=int, default=200, help="Number of epochs to train for.")
 
     # Loss weights.
-    parser.add_argument("--l_nll", type=float, default=1.0, help="Weight of nll latent loss.")
-    parser.add_argument("--l_mse", type=float, default=0.1, help="Weight of mse length loss.")
+    parser.add_argument("--l_mse", type=float, default=1e-1, help="Weight of mse length loss.")
     parser.add_argument("--l_reg", type=float, default=1e-4, help="Weight of orthogonal regularization.")
 
     # Train parameters.
     parser.add_argument("--log_dir", type=str, default="/home/vliu15/tts-gan/logs", help="Where to log all training outputs.")
-    parser.add_argument("--max_grad_norm", type=float, default=1.0, help="Norm of gradients to clip to.")
+    parser.add_argument("--max_grad_norm", type=float, default=0.0, help="Norm of gradients to clip to. Set to 0 to bypass.")
 
     return parser.parse_args()
 
@@ -79,7 +74,6 @@ def parse_arguments():
 def train(
     trainer: nn.Module,
     train_dataloader: torch.utils.data.DataLoader,
-    val_dataloader: torch.utils.data.DataLoader,
     d_optimizer: torch.optim.Optimizer,
     g_optimizer: torch.optim.Optimizer,
     d_scheduler: torch.optim.lr_scheduler._LRScheduler,
@@ -90,30 +84,31 @@ def train(
     global_step: int = 0,
     loss_weights: dict = {},
     device: str = "cuda",
-    max_grad_norm: float = 1.0,
+    max_grad_norm: float = 0.0,
 ):
     """ Trains model fully. """
     writer = SummaryWriter(log_dir)
     version = os.path.basename(log_dir)
 
+    trainer.train()
     for i in range(start_epoch, end_epoch):
 
         # For weighting hard and soft spectrogram prediction loss.
-        alpha = math.exp(-i / math.sqrt(end_epoch))
+        alpha = math.exp(-(i + 1) / math.sqrt(end_epoch))  # allow some gradient flow from soft loss in epoch i=0
         loss_weights["hard"] = alpha
         loss_weights["soft"] = 1. - alpha
 
-        trainer.train()
         pbar = tqdm(train_dataloader, total=len(train_dataloader), mininterval=1, desc="[version={},epoch={}]".format(version, i))
         for batch_idx, batch in enumerate(pbar):
             batch = [example.to(device) for example in batch]
 
             # Discriminator.
             d_optimizer.zero_grad()
-            d_loss_dict = trainer.d_step(*batch, jitter_steps=60, debug=(batch_idx % 50 == 0))
+            d_loss_dict, y, y_pred, z, z_pred = trainer.d_step(*batch, jitter_steps=60, debug=(batch_idx % 50 == 0))
             d_loss = d_loss_dict["real"] + d_loss_dict["fake"]
             d_loss.backward()
-            torch.nn.utils.clip_grad_norm_(trainer.discriminator_parameters, max_grad_norm)
+            if max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(trainer.discriminator_parameters, max_grad_norm)
             d_optimizer.step()
 
             # Generator.
@@ -124,8 +119,9 @@ def train(
                 weight = loss_weights.get(name, 1.0)
                 g_loss = g_loss + weight * loss
             g_loss.backward()
-            trainer.apply_orthogonal_regularization(trainer.generator_parameters, weight=loss_weights["reg"])
-            torch.nn.utils.clip_grad_norm_(trainer.generator_parameters, max_grad_norm)
+            trainer.apply_orthogonal_regularization(trainer.named_generator_parameters, weight=loss_weights["reg"])
+            if max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(trainer.generator_parameters, max_grad_norm)
             g_optimizer.step()
 
             # Log training losses.
@@ -134,52 +130,24 @@ def train(
             writer.add_scalar("train_d_loss", d_loss.item(), global_step)
             writer.add_scalar("train_g_loss", g_loss.item(), global_step)
 
+        writer.add_audio("train_audio_target", np.nan_to_num(y[0].cpu().numpy()), global_step, sample_rate=trainer.sampling_rate)
+        writer.add_audio("train_audio_predicted", np.nan_to_num(y_pred[0].cpu().numpy()), global_step, sample_rate=trainer.sampling_rate)
+        writer.add_image("train_mel_target", plot_spectrogram_to_numpy(z[0].cpu().numpy()), global_step, dataformats="HWC")
+        writer.add_image("train_mel_predicted", plot_spectrogram_to_numpy(z_pred[0].cpu().numpy()), global_step, dataformats="HWC")
+
         # Post epoch management.
         pbar.close()
         d_scheduler.step()
         g_scheduler.step()
-        if (i + 1) % 5 == 0:
-            torch.save({
-                "epoch": i + 1,
-                "global_step": global_step,
-                "trainer": trainer.state_dict(),
-                "d_optim": d_optimizer.state_dict(),
-                "g_optim": g_optimizer.state_dict(),
-                "d_sched": d_scheduler.state_dict(),
-                "g_sched": g_scheduler.state_dict(),
-            }, os.path.join(log_dir, "model_{}.pt".format(i + 1)))
-
-        trainer.eval()
-        with torch.no_grad():
-            d_loss = 0.0
-            g_loss = 0.0
-            for batch_idx, batch in enumerate(val_dataloader):
-                batch = [example.to(device) for example in batch]
-                d_loss_dict, g_loss_dict, y, y_pred, z, z_pred = trainer.step(*batch, jitter_steps=60, debug=True)
-
-                # Accumulate discriminator loss.
-                d_loss += d_loss_dict["real"].item() + d_loss_dict["fake"].item()
-
-                # Accumulate generator loss.
-                for name, loss in g_loss_dict.items():
-                    weight = loss_weights.get(name, 1.0)
-                    g_loss += weight * loss.item()
-
-                # Log validation images of first validation example.
-                if batch_idx == 0:
-                    writer.add_image("val_mel_target", plot_spectrogram_to_numpy(z[0].cpu().numpy()), global_step, dataformats="HWC")
-                    writer.add_image("val_mel_predicted", plot_spectrogram_to_numpy(z_pred[0].cpu().numpy()), global_step, dataformats="HWC")
-                    writer.add_audio("val_audio_target", np.nan_to_num(y[0].cpu().numpy()), global_step, sample_rate=trainer.sampling_rate)
-                    writer.add_audio("val_audio_predicted", np.nan_to_num(y_pred[0].cpu().numpy()), global_step, sample_rate=trainer.sampling_rate)
-
-            d_loss /= len(val_dataloader)
-            g_loss /= len(val_dataloader)
-
-            # Log validation losses.
-            writer.add_scalar("val_d_loss", d_loss, global_step)
-            writer.add_scalar("val_g_loss", g_loss, global_step)
-            print("[validation,epoch={}] d: {}, g: {}".format(i, round(d_loss, 4), round(g_loss, 4)))
-
+        torch.save({
+            "epoch": i + 1,
+            "global_step": global_step,
+            "trainer": trainer.state_dict(),
+            "d_optim": d_optimizer.state_dict(),
+            "g_optim": g_optimizer.state_dict(),
+            "d_sched": d_scheduler.state_dict(),
+            "g_sched": g_scheduler.state_dict(),
+        }, os.path.join(log_dir, "model_last.pt"))
 
 def main():
     """ Entry point to training function. """
@@ -202,7 +170,6 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     length_scale = int(np.prod(config.trainer.audio_generator.decoder_scales))
     assert args.train_segment_length % length_scale == 0
-    assert args.val_segment_length % length_scale == 0
 
     # Instantiate trainer.
     trainer = Trainer(**config.trainer)
@@ -228,23 +195,6 @@ def main():
         shuffle=True,
         num_workers=20,
     )
-    val_dataloader = torch.utils.data.DataLoader(
-        AudioDataset(
-            args.val_files,
-            args.metadata_file,
-            args.cmudict_file,
-            args.val_segment_length,
-            length_scale,
-            config.trainer.sampling_rate,
-            mu_law=config.trainer.mu_law,
-        ),
-        collate_fn=AudioDataset.collate_fn,
-        batch_size=args.val_batch_size,
-        pin_memory=True,
-        drop_last=False,
-        shuffle=False,
-        num_workers=8,
-    )
 
     # Instantiate optimizers and schedulers.
     d_optimizer = torch.optim.AdamW(trainer.discriminator_parameters, lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.999))
@@ -269,7 +219,6 @@ def main():
     train(
         trainer,
         train_dataloader,
-        val_dataloader,
         d_optimizer,
         g_optimizer,
         d_scheduler,
@@ -278,7 +227,7 @@ def main():
         args.epochs,
         start_epoch=start_epoch,
         global_step=global_step,
-        loss_weights={"nll": args.l_nll, "mse": args.l_mse, "reg": args.l_reg},
+        loss_weights={"mse": args.l_mse, "reg": args.l_reg},
         device=device,
         max_grad_norm=args.max_grad_norm,
     )

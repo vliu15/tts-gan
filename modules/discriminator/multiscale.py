@@ -64,6 +64,7 @@ class Discriminator(nn.Module):
             x, _ = self.layers[2 * i](x, mask=None)
             x, _ = self.layers[2 * i + 1](x, mask=None)
         x = self.proj_out(x)
+        x = x.squeeze(1).mean(-1)
         return x
 
 
@@ -92,8 +93,8 @@ class MultiScaleDiscriminator(nn.Module):
         """
         x: [b, c, t]
         """
-        outs = []
+        output = 0.0
         for i in range(self.n_discs):
-            outs += [self.discriminators[i](x)]
+            output += self.discriminators[i](x)
             x = self.downsample(x)
-        return outs
+        return output

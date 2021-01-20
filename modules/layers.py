@@ -147,14 +147,14 @@ class LayerNorm1d(nn.Module):
         self.beta = nn.Parameter(torch.zeros(1, channels, 1))
 
     def forward(self, x, mask=None):
-        lens = torch.sum(mask, -1, keepdim=True)
-        mean = torch.sum(x * mask, -1, keepdim=True) / lens
-        variance = torch.sum(((x - mean) ** 2) * mask, -1, keepdim=True) / lens
+        # lens = torch.sum(mask, -1, keepdim=True)
+        mean = torch.mean(x, -1, keepdim=True)
+        variance = torch.mean((x - mean) ** 2, -1, keepdim=True)
 
         x = (x - mean) * torch.rsqrt(variance + self.eps)
 
         x = x * self.gamma + self.beta
-        return x * mask
+        return x
 
 
 class ResBlock1d(nn.Module):

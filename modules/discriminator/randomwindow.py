@@ -72,4 +72,5 @@ class RandomWindowDiscriminator(nn.Module):
             x, _ = self.blocks[2 * i + 1](x, mask=None)
 
         x = self.proj_out(x)
+        x = x.squeeze(1).mean(-1)
         return x
