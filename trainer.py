@@ -78,7 +78,7 @@ class Trainer(nn.Module):
 
     def g_loss(self, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug: bool = False):
         """ Computes loss for generator. """
-        # l_adv = -y_pred_g.mean() + -z_pred_g.mean()
+        #  l_adv = -y_pred_g.mean() + -z_pred_g.mean()
         l_adv = ((y_pred_g - 1) ** 2).mean() + ((z_pred_g - 1) ** 2).mean()
         l_hard = F.l1_loss(z, z_pred)
         l_soft = self.sdtw_fn(z, z_pred)
