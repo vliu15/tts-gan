@@ -52,16 +52,16 @@ def parse_arguments():
     parser.add_argument("--cmudict_file", type=str, default="/home/vliu15/cmu_dictionary", help="Path to CMU phoneme dictionary.")
 
     parser.add_argument("--train_files", type=str, default="train_files.txt", help="Path to list of train files.")
-    parser.add_argument("--train_batch_size", type=int, default=64, help="Batch size for training.")
-    parser.add_argument("--train_segment_length", type=int, default=18000, help="Audio segment length for training.")
+    parser.add_argument("--train_batch_size", type=int, default=32, help="Batch size for training.")
+    parser.add_argument("--train_segment_length", type=int, default=23040, help="Audio segment length for training.")
 
     # Optimizer & scheduler.
-    parser.add_argument("--lr", type=float, default=2e-4, help="Initial learning rate.")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Initial learning rate.")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay value.")
     parser.add_argument("--epochs", type=int, default=200, help="Number of epochs to train for.")
 
     # Loss weights.
-    parser.add_argument("--l_mse", type=float, default=1e-1, help="Weight of mse length loss.")
+    parser.add_argument("--l_mse", type=float, default=0.1, help="Weight of mse length loss.")
     parser.add_argument("--l_reg", type=float, default=1e-4, help="Weight of orthogonal regularization.")
 
     # Train parameters.
@@ -94,7 +94,7 @@ def train(
     for i in range(start_epoch, end_epoch):
 
         # For weighting hard and soft spectrogram prediction loss.
-        alpha = math.exp(-(i + 1) / math.sqrt(end_epoch))  # allow some gradient flow from soft loss in epoch i=0
+        alpha = 0.5 * (1 + math.cos(i * math.pi / end_epoch))
         loss_weights["hard"] = alpha
         loss_weights["soft"] = 1. - alpha
 
@@ -148,6 +148,7 @@ def train(
             "d_sched": d_scheduler.state_dict(),
             "g_sched": g_scheduler.state_dict(),
         }, os.path.join(log_dir, "model_last.pt"))
+
 
 def main():
     """ Entry point to training function. """

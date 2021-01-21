@@ -48,11 +48,9 @@ class DurationPredictor(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv1d(hidden_channels, hidden_channels, kernel_size, padding=kernel_size // 2)
         self.conv2 = nn.Conv1d(hidden_channels, hidden_channels, kernel_size, padding=kernel_size // 2)
-        self.conv3 = nn.Conv1d(hidden_channels, hidden_channels, kernel_size, padding=kernel_size // 2)
 
         self.norm1 = BatchNorm1d(hidden_channels)
         self.norm2 = BatchNorm1d(hidden_channels)
-        self.norm3 = BatchNorm1d(hidden_channels)
 
         self.activation = F.gelu
 
@@ -69,10 +67,6 @@ class DurationPredictor(nn.Module):
         x = self.norm2(x, mask=mask)
         x = self.activation(x)
         x = self.conv2(x * mask)
-
-        x = self.norm3(x, mask=mask)
-        x = self.activation(x)
-        x = self.conv3(x * mask)
 
         x = self.proj_out(x * mask)
         x = x.exp() * mask

@@ -73,7 +73,7 @@ class AudioDiscriminator(nn.Module):
 
     def __init__(
         self,
-        windows: List[int] = [2, 3, 3, 5],
+        windows: List[int] = [200, 400, 800, 1600, 3200],
         n_layers: int = 4,
         base_channels: int = 64,
         kernel_size: int = 3,
@@ -86,10 +86,10 @@ class AudioDiscriminator(nn.Module):
         ])
 
     def forward(self, y):
-        output = 0.0
+        output = []
         for i, window in enumerate(self.windows):
             start = random.randint(0, y.size(-1) - window)
-            output += self.discriminators[i](y[:, start:start + window])
+            output += [self.discriminators[i](y[:, start:start + window])]
         return output
 
 

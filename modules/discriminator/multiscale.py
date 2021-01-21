@@ -28,7 +28,7 @@ from modules.layers import ResBlock1d, SpectralNormConv1d
 
 class Discriminator(nn.Module):
     """ Single resolution discriminator for 1d tensors. Applies spectral normalization to all convolutions.
-    
+
     Args:
         n_layers: number of residual block layers
         in_channels: number of channels of input
@@ -60,17 +60,17 @@ class Discriminator(nn.Module):
         x: [b, c, t]
         """
         x = self.proj_in(x)
+        mask = None
         for i in range(self.n_layers):
-            x, _ = self.layers[2 * i](x, mask=None)
-            x, _ = self.layers[2 * i + 1](x, mask=None)
-        x = self.proj_out(x)
-        x = x.squeeze(1).mean(-1)
+            x, mask = self.layers[2 * i](x, mask=mask)
+            x, mask = self.layers[2 * i + 1](x, mask=mask)
+        x = self.proj_out(x).squeeze(1)
         return x
 
 
 class MultiScaleDiscriminator(nn.Module):
     """ Multi-scale discriminator for 1d tensors.
-    
+
     Args:
         n_discs: number of discriminators (at successfully halved resolutions)
         n_layers: number of residual block layers
@@ -84,7 +84,7 @@ class MultiScaleDiscriminator(nn.Module):
         channels = base_channels
 
         self.n_discs = n_discs
-        self.downsample = nn.AvgPool1d(2, 2)
+        self.downsample = nn.AvgPool1d(3, stride=2, padding=1, count_include_pad=False)
         self.discriminators = nn.ModuleList([
             Discriminator(n_layers, in_channels, base_channels, kernel_size) for i in range(n_discs)
         ])
@@ -93,8 +93,8 @@ class MultiScaleDiscriminator(nn.Module):
         """
         x: [b, c, t]
         """
-        output = 0.0
+        output = []
         for i in range(self.n_discs):
-            output += self.discriminators[i](x)
+            output += [self.discriminators[i](x)]
             x = self.downsample(x)
         return output

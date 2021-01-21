@@ -66,10 +66,10 @@ class Trainer(nn.Module):
 
     def d_loss(self, y_d, y_pred_d, z_d, z_pred_d, debug: bool = False):
         """ Computes loss for discriminators. """
-        # l_real = F.relu(1 - y_d).mean() + F.relu(1 - z_d).mean()
-        # l_fake = F.relu(1 + y_pred_d).mean() + F.relu(1 + z_pred_d).mean()
-        l_real = ((y_d - 1) ** 2).mean() + ((z_d - 1) ** 2).mean()
-        l_fake = (y_pred_d ** 2).mean() + (z_pred_d ** 2).mean()
+        l_real = sum(F.relu(1 - pred).sum(-1).mean() for pred in y_d + z_d)
+        l_fake = sum(F.relu(1 + pred).sum(-1).mean() for pred in y_pred_d + z_pred_d)
+        # l_real = sum(((pred - 1) ** 2).sum(-1).mean(0) for pred in y_d + z_d)
+        # l_fake = sum((pred ** 2).sum(-1).mean(0) for pred in y_pred_d + z_pred_d)
 
         if debug:
             print_list_values(l_real, l_fake, prefix="d\t")
@@ -78,8 +78,8 @@ class Trainer(nn.Module):
 
     def g_loss(self, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug: bool = False):
         """ Computes loss for generator. """
-        #  l_adv = -y_pred_g.mean() + -z_pred_g.mean()
-        l_adv = ((y_pred_g - 1) ** 2).mean() + ((z_pred_g - 1) ** 2).mean()
+        l_adv = sum(-pred.sum(-1).mean() for pred in y_pred_g + z_pred_g)
+        # l_adv = sum(((pred - 1) ** 2).sum(-1).mean() for pred in y_pred_g + z_pred_g)
         l_hard = F.l1_loss(z, z_pred)
         l_soft = self.sdtw_fn(z, z_pred)
         l_mse = 0.5 * ((y_len.float() - y_pred_len.float()) ** 2).mean()

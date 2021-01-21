@@ -196,7 +196,8 @@ class ResBlock1d(nn.Module):
         if scale_factor > 1:
             self.upsample = nn.Upsample(scale_factor=scale_factor)
         elif scale_factor < 1:
-            self.upsample = nn.AvgPool1d(int(1./scale_factor), int(1./scale_factor))
+            scale_factor = int(1./scale_factor)
+            self.upsample = nn.AvgPool1d(scale_factor + 2, scale_factor, padding=2, count_include_pad=False)
 
         padding = (kernel_size - 1) * dilation // 2
 

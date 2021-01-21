@@ -30,7 +30,7 @@ from modules.layers import ResBlock1d, SpectralNormConv1d
 
 class RandomWindowDiscriminator(nn.Module):
     """ Random window discriminator. Reshapes inputs to temporal dim and applies residual layers.
-    
+
     Args:
         n_layers: number of residual block / downsampling layers
         in_channels: number of channels of input
@@ -63,14 +63,13 @@ class RandomWindowDiscriminator(nn.Module):
         """
         x: [b, t]
         """
-        b, l = x.size()
         x = x.unfold(1, self.in_channels, self.in_channels).permute(0, 2, 1)
         x = self.proj_in(x)
 
+        mask = None
         for i in range(self.n_layers):
-            x, _ = self.blocks[2 * i](x, mask=None)
-            x, _ = self.blocks[2 * i + 1](x, mask=None)
+            x, mask = self.blocks[2 * i](x, mask=mask)
+            x, mask = self.blocks[2 * i + 1](x, mask=mask)
 
-        x = self.proj_out(x)
-        x = x.squeeze(1).mean(-1)
+        x = self.proj_out(x).squeeze(1)
         return x
