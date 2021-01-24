@@ -58,7 +58,7 @@ def parse_arguments():
     # Optimizer & scheduler.
     parser.add_argument("--lr", type=float, default=1e-4, help="Initial learning rate.")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay value.")
-    parser.add_argument("--epochs", type=int, default=200, help="Number of epochs to train for.")
+    parser.add_argument("--epochs", type=int, default=500, help="Number of epochs to train for.")
 
     # Loss weights.
     parser.add_argument("--l_mse", type=float, default=0.1, help="Weight of mse length loss.")
@@ -66,7 +66,7 @@ def parse_arguments():
 
     # Train parameters.
     parser.add_argument("--log_dir", type=str, default="/home/vliu15/tts-gan/logs", help="Where to log all training outputs.")
-    parser.add_argument("--max_grad_norm", type=float, default=0.0, help="Norm of gradients to clip to. Set to 0 to bypass.")
+    parser.add_argument("--max_grad_norm", type=float, default=1.0, help="Norm of gradients to clip to. Set to 0 to bypass.")
 
     return parser.parse_args()
 
@@ -94,7 +94,8 @@ def train(
     for i in range(start_epoch, end_epoch):
 
         # For weighting hard and soft spectrogram prediction loss.
-        alpha = 0.5 * (1 + math.cos(i * math.pi / end_epoch))
+        alpha = math.exp(-i / math.sqrt(end_epoch))
+        alpha *= alpha > 1e-5
         loss_weights["hard"] = alpha
         loss_weights["soft"] = 1. - alpha
 
@@ -137,8 +138,8 @@ def train(
 
         # Post epoch management.
         pbar.close()
-        d_scheduler.step()
-        g_scheduler.step()
+        # d_scheduler.step()
+        # g_scheduler.step()
         torch.save({
             "epoch": i + 1,
             "global_step": global_step,

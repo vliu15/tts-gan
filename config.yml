@@ -8,7 +8,7 @@ trainer:
   audio_generator:
     _target_: models.AudioGenerator
     align_gamma: 10.0
-    encoder_layers: 10
+    encoder_layers: 12
     encoder_channels: 256
     decoder_scales: [1, 1, 2, 3, 3, 5]
     decoder_channels: 512
