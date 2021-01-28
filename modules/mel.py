@@ -151,6 +151,9 @@ class STFT(nn.Module):
         self.register_buffer("forward_basis", forward_basis)
         self.register_buffer("inverse_basis", inverse_basis)
 
+    def forward(self, input_data):
+        return self.transform(input_data)
+
     def transform(self, input_data):
         """ Applies short-time Fourier transform. """
         num_batches = input_data.shape[0]

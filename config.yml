@@ -10,7 +10,7 @@ trainer:
     align_gamma: 10.0
     encoder_layers: 12
     encoder_channels: 256
-    decoder_scales: [1, 1, 2, 3, 3, 5]
+    decoder_scales: [1, 2, 3, 3, 5, 1]
     decoder_channels: 512
     latent_channels: 128
     kernel_size: 3
@@ -22,29 +22,30 @@ trainer:
     base_channels: 64
     kernel_size: 3
 
-  spect_discriminator:
-    _target_: models.SpectrogramDiscriminator
-    n_discs: 3
-    n_layers: 3
-    mel_channels: *mel_channels
-    base_channels: 64
-    kernel_size: 3
-
   spect_fn:
-    _target_: modules.mel.MelSpectrogram
+    _target_:  modules.mel.MelSpectrogram
     filter_length: 1024
-    hop_length: 256
-    win_length: 1024
+    hop_length: 120
+    win_length: 600
     n_mels: *mel_channels
     sampling_rate: *sampling_rate
     mel_fmin: 0.
     mel_fmax: 8000.
     window: hann
 
-  sdtw_fn:
-    _target_: modules.sdtw.SoftDynamicTimeWarping
-    gamma: 0.01
-    penalty: 1.0
-    normalize: false
-    bandwidth: null
-    dist_func: manhattan
+  stft_fn:
+    - _target_: modules.mel.STFT
+      filter_length: 1024
+      hop_length: 120
+      win_length: 600
+      window: hann
+    - _target_: modules.mel.STFT
+      filter_length: 2048
+      hop_length: 240
+      win_length: 1200
+      window: hann
+    - _target_: modules.mel.STFT
+      filter_length: 512
+      hop_length: 50
+      win_length: 240
+      window: hann

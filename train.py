@@ -53,7 +53,7 @@ def parse_arguments():
 
     parser.add_argument("--train_files", type=str, default="train_files.txt", help="Path to list of train files.")
     parser.add_argument("--train_batch_size", type=int, default=32, help="Batch size for training.")
-    parser.add_argument("--train_segment_length", type=int, default=23040, help="Audio segment length for training.")
+    parser.add_argument("--train_segment_length", type=int, default=18000, help="Audio segment length for training.")
 
     # Optimizer & scheduler.
     parser.add_argument("--lr", type=float, default=1e-4, help="Initial learning rate.")
@@ -61,7 +61,10 @@ def parse_arguments():
     parser.add_argument("--epochs", type=int, default=500, help="Number of epochs to train for.")
 
     # Loss weights.
+    parser.add_argument("--l_adv", type=float, default=4., help="Weight of adversarial loss.")
     parser.add_argument("--l_mse", type=float, default=0.1, help="Weight of mse length loss.")
+    parser.add_argument("--l_sc", type=float, default=1., help="Weight of spectral convergence loss.")
+    parser.add_argument("--l_mag", type=float, default=1., help="Weight of log stft magnitude loss.")
     parser.add_argument("--l_reg", type=float, default=1e-4, help="Weight of orthogonal regularization.")
 
     # Train parameters.
@@ -84,7 +87,7 @@ def train(
     global_step: int = 0,
     loss_weights: dict = {},
     device: str = "cuda",
-    max_grad_norm: float = 0.0,
+    max_grad_norm: float = 1.0,
 ):
     """ Trains model fully. """
     writer = SummaryWriter(log_dir)
@@ -93,19 +96,13 @@ def train(
     trainer.train()
     for i in range(start_epoch, end_epoch):
 
-        # For weighting hard and soft spectrogram prediction loss.
-        alpha = math.exp(-i / math.sqrt(end_epoch))
-        alpha *= alpha > 1e-5
-        loss_weights["hard"] = alpha
-        loss_weights["soft"] = 1. - alpha
-
         pbar = tqdm(train_dataloader, total=len(train_dataloader), mininterval=1, desc="[version={},epoch={}]".format(version, i))
         for batch_idx, batch in enumerate(pbar):
             batch = [example.to(device) for example in batch]
 
             # Discriminator.
             d_optimizer.zero_grad()
-            d_loss_dict, y, y_pred, z, z_pred = trainer.d_step(*batch, jitter_steps=60, debug=(batch_idx % 50 == 0))
+            d_loss_dict, y, y_pred, z, z_pred = trainer.d_step(*batch, debug=(batch_idx % 50 == 0))
             d_loss = d_loss_dict["real"] + d_loss_dict["fake"]
             d_loss.backward()
             if max_grad_norm > 0:
@@ -114,7 +111,7 @@ def train(
 
             # Generator.
             g_optimizer.zero_grad()
-            g_loss_dict = trainer.g_step(*batch, jitter_steps=60, debug=(batch_idx % 50 == 0))
+            g_loss_dict = trainer.g_step(*batch, debug=(batch_idx % 50 == 0))
             g_loss = 0.0
             for name, loss in g_loss_dict.items():
                 weight = loss_weights.get(name, 1.0)
@@ -199,9 +196,9 @@ def main():
     )
 
     # Instantiate optimizers and schedulers.
-    d_optimizer = torch.optim.AdamW(trainer.discriminator_parameters, lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.999))
+    d_optimizer = torch.optim.Adam(trainer.discriminator_parameters, lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.99))
     d_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(d_optimizer, T_max=args.epochs)
-    g_optimizer = torch.optim.AdamW(trainer.generator_parameters, lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.999))
+    g_optimizer = torch.optim.Adam(trainer.generator_parameters, lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.99))
     g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(g_optimizer, T_max=args.epochs)
 
     # Load checkpoint if specified.
@@ -229,7 +226,7 @@ def main():
         args.epochs,
         start_epoch=start_epoch,
         global_step=global_step,
-        loss_weights={"mse": args.l_mse, "reg": args.l_reg},
+        loss_weights={"adv": args.l_adv, "mse": args.l_mse, "sc": args.l_sc, "mag": args.l_mag, "reg": args.l_reg},
         device=device,
         max_grad_norm=args.max_grad_norm,
     )

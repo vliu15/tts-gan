@@ -51,11 +51,13 @@ class Decoder(nn.Module):
         in_channels: int = 128,
         hidden_channels: int = 512,
         kernel_size: int = 3,
+        n_mixtures: int = 10,
     ):
         super().__init__()
         self.scale_factors = scale_factors
         self.n_layers = len(scale_factors)
         self.activation = F.gelu
+        self.n_mixtures = n_mixtures
 
         self.proj_in = nn.Conv1d(in_channels, hidden_channels, 1)
 
@@ -68,7 +70,7 @@ class Decoder(nn.Module):
             ]
             channels //= 2
 
-        self.proj_out = nn.Conv1d(channels, 1, 1)
+        self.proj_out = nn.Conv1d(channels, n_mixtures * 3, 1)
 
     def forward(self, y, y_len):
         """
@@ -88,6 +90,7 @@ class Decoder(nn.Module):
 
         # Project to audio waveform.
         y = self.proj_out(y * mask)
-        y = torch.tanh(y * mask)
+        y[:, self.n_mixtures:2 * self.n_mixtures, :] = torch.tanh(y[:, self.n_mixtures:2 * self.n_mixtures, :] * mask)
 
-        return y.squeeze(1), mask
+        # return y.squeeze(1), mask
+        return y, mask

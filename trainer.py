@@ -29,7 +29,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from modules.mixture import mean_from_mix_gaussian, mix_gaussian_loss
 from modules.utils import get_postprocessing_fn, print_batch_stats, print_cuda_memory, print_list_values
+
+
+def frobenius_norm(x):
+    return torch.sqrt((x.flatten(1) ** 2).sum(1))
+
+
+def spectral_convergence(i, j):
+    return (frobenius_norm(i - j) / frobenius_norm(i)).mean(0)
+
+
+def log_stft_magnitude(i, j):
+    return torch.abs(torch.log(i) - torch.log(j)).sum(-1).mean()
 
 
 class Trainer(nn.Module):
@@ -39,9 +52,8 @@ class Trainer(nn.Module):
         sampling_rate: sampling rate of the audio trained to generate
         audio_generator: structured config for audio generator
         audio_discriminator: structured config for audio discriminator
-        spect_discriminator: structured config for spectrogram discriminator
-        spect_fn: structured config for spectrogram function
-        sdtw_fn: structured config for soft dynamic time warping function
+        spect_fn: structured config for mel-spectrogram computation
+        stft_fn: nested structured config for short-time fourier transform function
         mu_law: whether to learn mu-transformed audio directly
     """
 
@@ -50,65 +62,60 @@ class Trainer(nn.Module):
         sampling_rate: int,
         audio_generator: DictConfig,
         audio_discriminator: DictConfig,
-        spect_discriminator: DictConfig,
         spect_fn: DictConfig,
-        sdtw_fn: DictConfig,
+        stft_fn: DictConfig,
         mu_law: bool = True,
     ):
         super().__init__()
         self.sampling_rate = sampling_rate
         self.audio_generator = instantiate(audio_generator)
         self.audio_discriminator = instantiate(audio_discriminator)
-        self.spect_discriminator = instantiate(spect_discriminator)
         self.spect_fn = instantiate(spect_fn)
-        self.sdtw_fn = instantiate(sdtw_fn)
+        self.stft_fn = nn.ModuleList([instantiate(stft) for stft in stft_fn])
         self.post_fn = get_postprocessing_fn(mu_law=mu_law)
 
-    def d_loss(self, y_d, y_pred_d, z_d, z_pred_d, debug: bool = False):
+    def d_loss(self, y_d, y_pred_d, debug: bool = False):
         """ Computes loss for discriminators. """
-        l_real = sum(F.relu(1 - pred).sum(-1).mean() for pred in y_d + z_d)
-        l_fake = sum(F.relu(1 + pred).sum(-1).mean() for pred in y_pred_d + z_pred_d)
-        # l_real = sum(((pred - 1) ** 2).sum(-1).mean(0) for pred in y_d + z_d)
-        # l_fake = sum((pred ** 2).sum(-1).mean(0) for pred in y_pred_d + z_pred_d)
+        l_real = sum(((pred - 1) ** 2).sum(-1).mean() for pred in y_d)
+        l_fake = sum((pred ** 2).sum(-1).mean() for pred in y_pred_d)
 
         if debug:
             print_list_values(l_real, l_fake, prefix="d\t")
 
         return {"real": l_real, "fake": l_fake}
 
-    def g_loss(self, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug: bool = False):
+    def g_loss(self, y, y_len, y_pred, y_pred_g, y_pred_len, s, s_pred, debug: bool = False):
         """ Computes loss for generator. """
-        l_adv = sum(-pred.sum(-1).mean() for pred in y_pred_g + z_pred_g)
-        # l_adv = sum(((pred - 1) ** 2).sum(-1).mean() for pred in y_pred_g + z_pred_g)
-        l_hard = F.l1_loss(z, z_pred)
-        l_soft = self.sdtw_fn(z, z_pred)
+        l_adv = sum(((pred - 1) ** 2).sum(-1).mean() for pred in y_pred_g)
         l_mse = 0.5 * ((y_len.float() - y_pred_len.float()) ** 2).mean()
+        l_sc = sum(spectral_convergence(i, j) for i, j in zip(s, s_pred)) / len(self.stft_fn)
+        l_mag = sum(log_stft_magnitude(i, j) for i, j in zip(s, s_pred)) / len(self.stft_fn)
+        l_mix = mix_gaussian_loss(y_pred, y)
 
         if debug:
-            print_list_values(l_adv, l_hard, l_soft, l_mse, prefix="g\t")
+            print_list_values(l_adv, l_mse, l_sc, l_mag, l_mix, prefix="g\t")
 
-        return {"adv": l_adv, "hard": l_hard, "soft": l_soft, "mse": l_mse}
+        return {"adv": l_adv, "mse": l_mse, "sc": l_sc, "mag": l_mag, "mix": l_mix}
 
-    def d_step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 0, debug: bool = False):
+    def d_step(self, x, x_len, y, y_len, y_offset, aligner_len, debug: bool = False):
         """ Computes one step through the discriminator. """
         with torch.no_grad():
             y_pred, y_pred_len, x_latents, y_latents = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
+            y_pred = mean_from_mix_gaussian(y_pred)
             z_pred = self.spect_fn(self.post_fn(y_pred), jitter_steps=0)
-            z = self.spect_fn(self.post_fn(y), jitter_steps=jitter_steps)
+            z = self.spect_fn(self.post_fn(y), jitter_steps=0)
 
-        if debug:
-            print_cuda_memory()
-            print_batch_stats(y, prefix="y*\t")
-            print_batch_stats(y_pred, prefix="y^\t")
-            print_batch_stats(x_latents, prefix="xl\t")
-            print_batch_stats(y_latents, prefix="yl\t")
+            if debug:
+                print_cuda_memory()
+                print_batch_stats(y, prefix="y*\t")
+                print_batch_stats(y_pred, prefix="y^\t")
+                print_batch_stats(x_latents, prefix="xl\t")
+                print_batch_stats(y_latents, prefix="yl\t")
 
         y_d = self.audio_discriminator(y)
         y_pred_d = self.audio_discriminator(y_pred)
-        z_d = self.spect_discriminator(z)
-        z_pred_d = self.spect_discriminator(z_pred)
 
-        loss_dict = self.d_loss(y_d, y_pred_d, z_d, z_pred_d, debug=debug)
+        loss_dict = self.d_loss(y_d, y_pred_d, debug=debug)
 
         with torch.no_grad():
             y = self.post_fn(y)
@@ -119,15 +126,15 @@ class Trainer(nn.Module):
     def g_step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 0, debug: bool = False):
         """ Computes one step through the generator. """
         y_pred, y_pred_len, _, _ = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
-        z_pred = self.spect_fn(self.post_fn(y_pred), jitter_steps=0)
+        y_samp = mean_from_mix_gaussian(y_pred)
+        s_pred = [stft_fn(self.post_fn(y_samp)) for stft_fn in self.stft_fn]
 
         with torch.no_grad():
-            z = self.spect_fn(self.post_fn(y), jitter_steps=jitter_steps)
+            s = [stft_fn(self.post_fn(y)) for stft_fn in self.stft_fn]
 
-        y_pred_g = self.audio_discriminator(y_pred)
-        z_pred_g = self.spect_discriminator(z_pred)
+        y_pred_g = self.audio_discriminator(y_samp)
 
-        loss_dict = self.g_loss(y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug=debug)
+        loss_dict = self.g_loss(y, y_len, y_pred, y_pred_g, y_pred_len, s, s_pred, debug=debug)
         return loss_dict
 
     @torch.no_grad()
@@ -182,11 +189,11 @@ class Trainer(nn.Module):
 
     @property
     def discriminator_parameters(self):
-        return list(self.audio_discriminator.parameters()) + list(self.spect_discriminator.parameters())
+        return list(self.audio_discriminator.parameters())
 
     @property
     def named_discriminator_parameters(self):
-        return list(self.audio_discriminator.named_parameters()) + list(self.spect_discriminator.named_parameters())
+        return list(self.audio_discriminator.named_parameters())
 
     @property
     def generator_parameters(self):

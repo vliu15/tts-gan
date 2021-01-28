@@ -70,8 +70,9 @@ class DurationPredictor(nn.Module):
 
         x = self.proj_out(x * mask)
         x = x.exp() * mask
+        x = x.squeeze(1)
 
-        return x.squeeze(1)
+        return x
 
 
 class Encoder(nn.Module):
