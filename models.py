@@ -55,7 +55,8 @@ class AudioGenerator(nn.Module):
         )
 
     def forward(self, x, x_len, y_len=None, y_offset=None):
-        x_latents, x_lengths, x_mask = self.encoder(x, x_len)
+        mu, logv, x_lengths, x_mask = self.encoder(x, x_len)
+        x_latents = self.sample(mu, logv)
         y_pred_len = x_lengths.sum(-1)
 
         # Patch in y_len for inference.
@@ -65,7 +66,13 @@ class AudioGenerator(nn.Module):
         y_latents = self.aligner(x_latents, x_lengths, x_mask, y_len, y_offset=y_offset)
         y, y_mask = self.decoder(y_latents, y_len)
 
-        return y, y_pred_len, x_latents, y_latents
+        return y, y_pred_len, mu, logv, y_latents
+
+    @staticmethod
+    def sample(mu, logv):
+        """ Samples from N(mu, v) with the reparameterization trick. """
+        eps = torch.randn(mu.size(), dtype=mu.dtype, device=mu.device)
+        return mu + torch.exp(logv / 2.) * eps
 
 
 class AudioDiscriminator(nn.Module):

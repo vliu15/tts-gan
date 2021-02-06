@@ -53,7 +53,7 @@ def parse_arguments():
 
     parser.add_argument("--train_files", type=str, default="train_files.txt", help="Path to list of train files.")
     parser.add_argument("--train_batch_size", type=int, default=32, help="Batch size for training.")
-    parser.add_argument("--train_segment_length", type=int, default=23040, help="Audio segment length for training.")
+    parser.add_argument("--train_segment_length", type=int, default=11520, help="Audio segment length for training.")
 
     # Optimizer & scheduler.
     parser.add_argument("--lr", type=float, default=1e-4, help="Initial learning rate.")

@@ -118,7 +118,7 @@ class Encoder(nn.Module):
             ]
 
         self.norm_l = BatchNorm1d(hidden_channels)
-        self.proj_l = nn.Conv1d(hidden_channels, out_channels, 1)
+        self.proj_l = nn.Conv1d(hidden_channels, 2 * out_channels, 1)
         self.proj_d = DurationPredictor(hidden_channels, kernel_size=kernel_size)
 
     def forward(self, x, x_len):
@@ -143,7 +143,8 @@ class Encoder(nn.Module):
         x_l = self.norm_l(x, mask=mask)
         x_l = self.activation(x_l)
         x_l = self.proj_l(x_l * mask)
+        mu, logv = torch.chunk(x_l, 2, dim=1)
 
         x_d = self.proj_d(x, mask=mask)
 
-        return x_l * mask, x_d, mask
+        return mu, logv, x_d, mask

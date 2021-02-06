@@ -33,7 +33,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 from modules.mel import MelSpectrogram
-from modules.phonemizer import cmudict, text_to_sequence
+from modules.phonemizer import cmudict, n_vocab, text_to_sequence
 from modules.utils import get_preprocessing_fn
 
 
@@ -52,6 +52,13 @@ def load_metadata(filename):
         filepaths_and_text = [line.strip().split("|")[:2] for line in f]
 
     return dict(filepaths_and_text)
+
+
+def intersperse(lst, item):
+    """ Intersperses a list with an item. """
+    result = [item] * (len(lst) * 2 + 1)
+    result[1::2] = lst
+    return result
 
 
 class AudioDataset(Dataset):
@@ -116,6 +123,7 @@ class AudioDataset(Dataset):
         # Process text.
         text = self.metadata[os.path.splitext(os.path.basename(filename))[0]]
         text = text_to_sequence(text, ["english_cleaners"], self.text_fn)
+        # text = intersperse(text, n_vocab)
         text = torch.LongTensor(text)
         text_len = text.size(0)
 

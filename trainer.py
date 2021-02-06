@@ -76,23 +76,24 @@ class Trainer(nn.Module):
 
         return {"real": l_real, "fake": l_fake}
 
-    def g_loss(self, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug: bool = False):
+    def g_loss(self, y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, mu, logv, debug: bool = False):
         """ Computes loss for generator. """
         l_adv = sum(-pred.sum(-1).mean() for pred in y_pred_g + z_pred_g)
         # l_adv = sum(((pred - 1) ** 2).sum(-1).mean() for pred in y_pred_g + z_pred_g)
         l_hard = F.l1_loss(z, z_pred)
         l_soft = self.sdtw_fn(z, z_pred)
         l_mse = 0.5 * ((y_len.float() - y_pred_len.float()) ** 2).mean()
+        l_kld = torch.mean(-0.5 * torch.sum(1 + logv - mu ** 2 - logv.exp(), dim=1))
 
         if debug:
-            print_list_values(l_adv, l_hard, l_soft, l_mse, prefix="g\t")
+            print_list_values(l_adv, l_hard, l_soft, l_mse, l_kld, prefix="g\t")
 
-        return {"adv": l_adv, "hard": l_hard, "soft": l_soft, "mse": l_mse}
+        return {"adv": l_adv, "hard": l_hard, "soft": l_soft, "mse": l_mse, "kld": l_kld}
 
     def d_step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 0, debug: bool = False):
         """ Computes one step through the discriminator. """
         with torch.no_grad():
-            y_pred, y_pred_len, x_latents, y_latents = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
+            y_pred, y_pred_len, mu, logv, y_latents = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
             z_pred = self.spect_fn(self.post_fn(y_pred), jitter_steps=0)
             z = self.spect_fn(self.post_fn(y), jitter_steps=jitter_steps)
 
@@ -100,7 +101,8 @@ class Trainer(nn.Module):
             print_cuda_memory()
             print_batch_stats(y, prefix="y*\t")
             print_batch_stats(y_pred, prefix="y^\t")
-            print_batch_stats(x_latents, prefix="xl\t")
+            print_batch_stats(mu, prefix="mu\t")
+            print_batch_stats(logv, prefix="logv\t")
             print_batch_stats(y_latents, prefix="yl\t")
 
         y_d = self.audio_discriminator(y)
@@ -118,7 +120,7 @@ class Trainer(nn.Module):
 
     def g_step(self, x, x_len, y, y_len, y_offset, aligner_len, jitter_steps: int = 0, debug: bool = False):
         """ Computes one step through the generator. """
-        y_pred, y_pred_len, _, _ = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
+        y_pred, y_pred_len, mu, logv, _ = self.audio_generator(x, x_len, y_len=aligner_len, y_offset=y_offset)
         z_pred = self.spect_fn(self.post_fn(y_pred), jitter_steps=0)
 
         with torch.no_grad():
@@ -127,7 +129,7 @@ class Trainer(nn.Module):
         y_pred_g = self.audio_discriminator(y_pred)
         z_pred_g = self.spect_discriminator(z_pred)
 
-        loss_dict = self.g_loss(y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, debug=debug)
+        loss_dict = self.g_loss(y_len, y_pred_g, y_pred_len, z, z_pred, z_pred_g, mu, logv, debug=debug)
         return loss_dict
 
     @torch.no_grad()
@@ -177,7 +179,7 @@ class Trainer(nn.Module):
             if len(param.shape) < 2 or param.grad is None or "emb" in name:
                 continue
             w = param.view(param.shape[0], -1)
-            grad = (2 * torch.mm(torch.mm(w, w.t()) - torch.eye(w.shape[0], device=w.device), w))
+            grad = (2 * torch.mm(torch.mm(w, w.t()) * (1. - torch.eye(w.shape[0], device=w.device)), w))
             param.grad.data += weight * grad.view(param.shape)
 
     @property

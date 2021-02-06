@@ -57,7 +57,7 @@ class Decoder(nn.Module):
         self.n_layers = len(scale_factors)
         self.activation = F.gelu
 
-        self.proj_in = nn.Conv1d(in_channels, hidden_channels, 1)
+        self.proj_in = SpectralNormConv1d(in_channels, hidden_channels, 1)
 
         channels = hidden_channels
         self.blocks = nn.ModuleList()
@@ -68,7 +68,7 @@ class Decoder(nn.Module):
             ]
             channels //= 2
 
-        self.proj_out = nn.Conv1d(channels, 1, 1)
+        self.proj_out = SpectralNormConv1d(channels, 1, 1)
 
     def forward(self, y, y_len):
         """
